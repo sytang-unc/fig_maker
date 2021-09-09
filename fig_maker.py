@@ -31,7 +31,7 @@ Drawable's maintain dimensions. Should output a cached surface for dynamic updat
 
 
 class Drawable:
-    def __init__(self, height_input, width_input, name_input=None):
+    def __init__(self, height_input: float, width_input: float, name_input: str =None):
         self.name = name_input
 
         self.height = height_input
@@ -41,23 +41,23 @@ class Drawable:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
-    def update_cached_surface(self):
+    def update_cached_surface(self) -> None:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
-    def draw_cached(self, ctx, x, y):
+    def draw_cached(self, ctx, x, y) -> None:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
-    def is_published(self):
+    def is_published(self) -> None:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
-    def update_published_surface(self):
+    def update_published_surface(self) -> None:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
-    def draw_published(self, ctx, x, y):
+    def draw_published(self, ctx, x, y) -> None:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
@@ -68,7 +68,7 @@ Sprites are immutable Drawables
 
 
 class Sprite(Drawable):
-    def __init__(self, height_input, width_input, surface_input, name_input=None):
+    def __init__(self, height_input: float, width_input: float, surface_input, name_input=None):
         Drawable.__init__(self, height_input, width_input, name_input)
         self.surface = surface_input
 
@@ -121,7 +121,7 @@ class Blank(Drawable):
         return
 
 
-preview_scale = 3.0
+preview_scale = 9.0
 
 """
 Bounding box info is updated automatically. Drawables impose an acyclic tree structure
@@ -208,7 +208,7 @@ class CompositeGraphic(Drawable):
     def draw_right_middle(self, draw_src, x, y):
         self._add_element(draw_src, x - draw_src.width, y - draw_src.height / 2)
 
-    def draw_left_top(self, draw_src, x, y):
+    def draw_left_top(self, draw_src, x=0, y=0):
         self._add_element(draw_src, x, y)
 
     def draw_right_bottom(self, draw_src, x, y):
@@ -271,24 +271,44 @@ No one should be calling is_published or is_cached on this. This doesn't get dra
 """
 
 
+
 class PaperGraphic(CompositeGraphic):
     def __init__(self, name_input):
         CompositeGraphic.__init__(self, name_input)
 
-    def publish(self):
+    def publish(self, format="pdf"):
         CompositeGraphic.update_published_surface(self)
-        surf = cairo.PDFSurface(self.name + '.pdf', self.width + 10, self.height + 10)
-        ctx = cairo.Context(surf)
-        ctx.set_source_surface(self.pub_surface, 5, 5)
-        ctx.paint()
-        ctx.show_page()
+        if format == "pdf":
+            surf = cairo.PDFSurface(self.name + '.pdf', self.width + 10, self.height + 10)
+            #surf = cairo.SVGSurface(self.name + '.svg', self.width + 10, self.height + 10)
+            ctx = cairo.Context(surf)
+            ctx.set_source_surface(self.pub_surface, 5, 5)
+            #ctx.save()
+            #ctx.scale(preview_scale,preview_scale)
+            #ctx.set_source_surface(self.pub_surface, 0.1*self.width, 0.1*self.height)
+            ctx.paint()
+            #ctx.restore()
+            ctx.show_page()
+            #surf.write_to_png(self.name + '.png')
+            #self.preview()
+        elif format == "png":
+            surf = cairo.ImageSurface(cairo.Format.ARGB32, int(preview_scale*self.width*1.2), int(preview_scale*self.height*1.2))
+            ctx = cairo.Context(surf)
+            ctx.save()
+            ctx.scale(preview_scale,preview_scale)
+            ctx.set_source_surface(self.pub_surface, 0.1*self.width, 0.1*self.height)
+            ctx.paint()
+            ctx.restore()
+            surf.write_to_png(self.name + '.png')
+        else:
+            print("Unknown format given to publish!")
 
     def preview(self):
         CompositeGraphic.update_cached_surface(self)
         surf = cairo.ImageSurface(cairo.Format.ARGB32, int(preview_scale * self.width * 1.2),
                                   int(preview_scale * self.height * 1.2))
         ctx = cairo.Context(surf)
-        ctx.translate(0.1 * self.width, 0.1 * self.height)
+        #ctx.translate(0.1 * self.width, 0.1 * self.height)
         ctx.set_source_surface(self.cached_surface, preview_scale * 0.1 * self.width, preview_scale * 0.1 * self.height)
         ctx.paint()
         surf.write_to_png(self.name + '.png')
@@ -300,7 +320,7 @@ The information needed to produce a schedule figure. Assumes indexing of tasks/p
 
 
 class SchedData:
-    def __init__(self, n_input, m_input):
+    def __init__(self, n_input, m_input, sched_end_min=0):
         self.n = n_input
         self.m = m_input
         self.executions = {}
@@ -308,14 +328,18 @@ class SchedData:
         self.releases = {}
         self.completions = {}
         self.deadlines = {}
+        self.pseudo_deadlines = {}
+        self.pseudo_releases = {}
         self.annotations = {}
-        self.sched_end = 0
+        self.sched_end = sched_end_min
         for i in range(self.n):
             self.executions[i] = []
             self.np_executions[i] = []
             self.releases[i] = []
+            self.pseudo_releases[i] = []
             self.completions[i] = []
             self.deadlines[i] = []
+            self.pseudo_deadlines[i] = []
             self.annotations[i] = []
 
     def add_execution(self, task_id, proc, start_time, end_time):
@@ -338,6 +362,12 @@ class SchedData:
 
         self.sched_end = max([self.sched_end, t])
 
+    def add_pseudo_release(self, task_id, t):
+        assert (task_id < self.n)
+        self.pseudo_releases[task_id].append(t)
+
+        self.sched_end = max([self.sched_end, t])
+
     def add_completion(self, task_id, t):
         assert (task_id < self.n)
         self.completions[task_id].append(t)
@@ -350,14 +380,31 @@ class SchedData:
 
         self.sched_end = max([self.sched_end, t])
 
-    def add_annotation(self, task_id, text, start, end=-1):
+    def add_pseudo_deadline(self, task_id, t):
         assert (task_id < self.n)
+        self.pseudo_deadlines[task_id].append(t)
+
+        self.sched_end = max([self.sched_end, t])
+
+    def add_annotation(self, task_id, text, start, end=-1, justify="middle"):
+        assert (task_id < self.n)
+        assert (justify == "left" or justify == "middle" or justify == "right")
         if end != -1:
             assert (start < end)
         else:
             end = start
-        self.annotations[task_id].append((text, start, end))
 
+        self.annotations[task_id].append((text, start, end, justify))
+
+
+def draw_sched(schedule, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True, transp_bg=True):
+    sched_graphic = draw_sched_help(schedule, start_from_zero, task_identifiers, scale_time_to_dots, time_axis_inc, sched_start_time, draw_time)
+    if transp_bg:
+        return sched_graphic
+    tot_graphic = CompositeGraphic()
+    tot_graphic.draw_left_top(rect_to_sprite(sched_graphic.height, sched_graphic.width))
+    tot_graphic.draw_left_top(sched_graphic)
+    return tot_graphic
 
 """
 Render a given SchedData
@@ -367,11 +414,10 @@ INPUT
 """
 
 
-def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
+def draw_sched_help(schedule, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True):
     sched_graphic = CompositeGraphic()
 
     # spaceing constants. Everything that is scaled is relative to label dimensions
-    scale_time_to_dots = 10
     offset_0 = 5
     extra_line = 20
     exec_vertical_scale = 1.5
@@ -394,14 +440,15 @@ def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
     for i in range(schedule.n):
         annot_sprites[i] = []
         annot_heights[i] = 0
-        for (annot, start, end) in schedule.annotations[i]:
+        for (annot, start, end, just) in schedule.annotations[i]:
             latex_annot = latex_to_sprite(annot, is_math=False)
-            annot_sprites[i].append((latex_annot, start, end))
+            annot_sprites[i].append((latex_annot, start, end, just))
             annot_heights[i] = max([annot_heights[i], latex_annot.height])
 
     # compute how high each horizontal axis will be
     y_botts = [0 for i in range(schedule.n)]
-    y_botts[0] = (exec_vertical_scale + vertical_spacing_scale) * task_label_height_max + annot_heights[i]
+    y_botts[0] = (exec_vertical_scale + vertical_spacing_scale) * task_label_height_max + annot_heights[0]
+
     if schedule.n > 1:
         for i in range(1, schedule.n):
             y_botts[i] = y_botts[i - 1] + (exec_vertical_scale + vertical_spacing_scale) * task_label_height_max + \
@@ -412,15 +459,21 @@ def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
     # create sprites for job releases and completions
     release_arrow = path_to_sprite([(0, task_label_height_max * (exec_vertical_scale + 0.5 * vertical_spacing_scale))], \
                                    ending_style=PathEndingStyle.BEGIN_ARROW, line_width=default_line_width * 2)
+    pseudo_release_arrow = path_to_sprite([(0, task_label_height_max * (exec_vertical_scale + 0.5 * vertical_spacing_scale))], \
+                                   ending_style=PathEndingStyle.BEGIN_ARROW, line_width=default_line_width * 2, line_pattern=gray_pattern)
+
     completion_T = path_to_sprite([(comp_T_width / 2, 0), (
     comp_T_width / 2, task_label_height_max * (exec_vertical_scale + 0.5 * vertical_spacing_scale)), \
                                    (comp_T_width / 2, 0), (comp_T_width, 0)], line_width=default_line_width * 2)
     deadline_arrow = path_to_sprite([(0, task_label_height_max * (exec_vertical_scale + 0.5 * vertical_spacing_scale))], \
                                     ending_style=PathEndingStyle.ENDING_ARROW, line_width=default_line_width * 2)
 
+    pseudo_deadline_arrow = path_to_sprite([(0, task_label_height_max * (exec_vertical_scale + 0.5 * vertical_spacing_scale))], \
+                                    ending_style=PathEndingStyle.ENDING_ARROW, line_width=default_line_width * 2, line_pattern=gray_pattern)
+
     # draw the main axes
     axis = path_to_sprite(
-        [(0, last_axis_y), (scale_time_to_dots * schedule.sched_end + offset_0 + extra_line, last_axis_y)],
+        [(0, last_axis_y - annot_heights[0]), (scale_time_to_dots * (schedule.sched_end - sched_start_time) + offset_0 + extra_line, last_axis_y - annot_heights[0])],
         ending_style=PathEndingStyle.BOTH_ARROW)
     sched_graphic.draw_left_bottom(axis, task_label_width_max * horiz_offset_scale, last_axis_y)
 
@@ -430,7 +483,7 @@ def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
         sched_graphic.draw_right_middle(task_labels[i], task_label_width_max,
                                         y_botts[i] - exec_vertical_scale / 2 * task_label_height_max)
         # draw axis for task
-        task_axis = path_to_sprite([(scale_time_to_dots * schedule.sched_end + offset_0 + extra_line, 0)],
+        task_axis = path_to_sprite([(scale_time_to_dots * (schedule.sched_end - sched_start_time) + offset_0 + extra_line, 0)],
                                    ending_style=PathEndingStyle.ENDING_ARROW, line_pattern=transp_pattern)
         sched_graphic.draw_left_bottom(task_axis, task_label_width_max * horiz_offset_scale, y_botts[i])
         # draw each block of execution for this task
@@ -438,36 +491,51 @@ def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
             sched_block = rect_to_sprite(task_label_height_max * exec_vertical_scale,
                                          scale_time_to_dots * (end_time - start_time), fill_pattern=sources_dict[proc])
             sched_graphic.draw_left_bottom(sched_block,
-                                           offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * start_time,
+                                           offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (start_time - sched_start_time),
                                            y_botts[i])
         for (proc, start_time, end_time) in schedule.np_executions[i]:
             sched_block = rect_to_sprite(task_label_height_max * exec_vertical_scale,
                                          scale_time_to_dots * (end_time - start_time), fill_pattern=sources_dict[proc],
                                          dash=True)
             sched_graphic.draw_left_bottom(sched_block,
-                                           offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * start_time,
+                                           offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (start_time - sched_start_time),
                                            y_botts[i])
 
         # draw releases/completions
         for t in schedule.releases[i]:
             sched_graphic.draw_center_bottom(release_arrow,
-                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * t,
+                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (t-sched_start_time),
                                              y_botts[i])
+        for t in schedule.pseudo_releases[i]:
+            sched_graphic.draw_center_bottom(pseudo_release_arrow,
+                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (t-sched_start_time),
+                                             y_botts[i])
+
         for t in schedule.completions[i]:
             sched_graphic.draw_center_bottom(completion_T,
-                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * t,
+                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (t-sched_start_time),
                                              y_botts[i])
         for t in schedule.deadlines[i]:
             sched_graphic.draw_center_bottom(deadline_arrow,
-                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * t,
+                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (t-sched_start_time),
+                                             y_botts[i])
+
+        for t in schedule.pseudo_deadlines[i]:
+            sched_graphic.draw_center_bottom(pseudo_deadline_arrow,
+                                             offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (t-sched_start_time),
                                              y_botts[i])
 
         # draw annotations
         annot_i_y = y_botts[i] - (exec_vertical_scale + vertical_spacing_scale) * task_label_height_max
-        for (annot, start, end) in annot_sprites[i]:
-            start_x = offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * start
-            end_x = offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * end
-            sched_graphic.draw_center_bottom(annot, end_x, annot_i_y)
+        for (annot, start, end, just) in annot_sprites[i]:
+            start_x = offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (start - sched_start_time)
+            end_x = offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (end - sched_start_time)
+            if just == "left":
+                sched_graphic.draw_left_bottom(annot, start_x, annot_i_y)
+            if just == "middle":
+                sched_graphic.draw_center_bottom(annot, 0.5*(start_x + end_x), annot_i_y)
+            if just == "right":
+                sched_graphic.draw_right_bottom(annot, end_x, annot_i_y)
             if (start != end):
                 range_arrows = path_to_sprite([(scale_time_to_dots * (end - start), 0)],
                                               ending_style=PathEndingStyle.BOTH_ARROW)
@@ -475,18 +543,19 @@ def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
 
     # label the time axis
     time_height = 0
-    for t in range(0, schedule.sched_end + 1, 5):
-        axis_label = latex_to_sprite(str(t))
-        sched_graphic.draw_center_top(axis_label,
-                                      task_label_width_max * horiz_offset_scale + offset_0 + scale_time_to_dots * t,
-                                      last_axis_y)
-        time_height = max([time_height, axis_label.height])
+    for t in range(sched_start_time, int(schedule.sched_end + 1), time_axis_inc):
+        if draw_time:
+            axis_label = latex_to_sprite(str(t))
+            sched_graphic.draw_center_top(axis_label,
+                                          task_label_width_max * horiz_offset_scale + offset_0 + scale_time_to_dots * (t-sched_start_time),
+                                       last_axis_y)
+            time_height = max([time_height, axis_label.height])
 
     # vertical lines for each time instant
-    for t in range(schedule.sched_end + 1):
-        time_vert_line = path_to_sprite([(0, last_axis_y)], line_pattern=transp_pattern, line_width=0.25)
+    for t in range(sched_start_time, int(schedule.sched_end + 1), time_axis_inc):
+        time_vert_line = path_to_sprite([(0, last_axis_y - annot_heights[0])], line_pattern=transp_pattern, line_width=0.25)
         sched_graphic.draw_left_bottom(time_vert_line,
-                                       task_label_width_max * horiz_offset_scale + offset_0 + scale_time_to_dots * t,
+                                       task_label_width_max * horiz_offset_scale + offset_0 + scale_time_to_dots * (t-sched_start_time),
                                        last_axis_y)
 
     time_text = latex_to_sprite("Time", is_math=False)
@@ -500,7 +569,7 @@ def draw_sched(schedule, start_from_zero=False, task_identifiers=None):
 """
 Folder for frequently used svgs
 """
-freq_dir = '/home/sytang/PycharmProjects/fig_maker/latex_frequent/'
+freq_dir = '/home/sytang/vscode/fig_maker/latex_frequent/'
 
 """
 Frequently used latex expressions mapping to svgs
@@ -531,7 +600,7 @@ latex_frequent_dict = dict([('\\tau_0', ('tau_0.svg', 9.784, 12.825)), \
 """
 Directory for transient files
 """
-tmp_dir = '/home/sytang/PycharmProjects/fig_maker/tmp_data/'
+tmp_dir = '/home/sytang/vscode/fig_maker/tmp_data/'
 
 """
 This is bad and I should feel bad, but it works well enough I guess. Uses latex to create a standalone pdf of text, converts the pdf to svg with pdf2svg, reads the svg back into cairo with Rsvg. This is especially stupid because pdf2svg already reads the pdf into cairo, but that's dependent on cairo & poppler's C APIs and I'm too lazy to leave python
@@ -551,7 +620,7 @@ def latex_to_sprite(text, is_math=True):
         svgfile = freq_dir + svgname
     else:
         with open(tmp_dir + 'tmp.tex', 'w') as tmp_tex:
-            tmp_tex.write('\\documentclass[border=2]{standalone}\n')
+            tmp_tex.write('\\documentclass[varwidth, border=2]{standalone}\n')
             tmp_tex.write('\\usepackage{amsmath}\n')
             tmp_tex.write('\\begin{document}\n')
             if is_math:
@@ -610,7 +679,7 @@ rownum is how many entries per row in the legend
 """
 
 
-def draw_legend(legend_dict, per_row=0):
+def draw_legend(legend_dict, per_row=0, horiz_padding = 0):
     keys = list(legend_dict.keys())
     assert (per_row <= len(keys))
     if per_row <= 0:
@@ -632,11 +701,11 @@ def draw_legend(legend_dict, per_row=0):
             sprite_array_keys[r][c] = key_sprite
             symbol_sprite = legend_dict[row_keys[c]]
             sprite_array_symbols[r][c] = symbol_sprite
-            col_widths[2 * c] = max([col_widths[2 * c], key_sprite.width])
-            col_widths[2 * c + 1] = max([col_widths[2 * c + 1], symbol_sprite.width])
+            col_widths[2 * c] = max([col_widths[2 * c], key_sprite.width + horiz_padding])
+            col_widths[2 * c + 1] = max([col_widths[2 * c + 1], symbol_sprite.width + horiz_padding])
             row_heights[r] = max([row_heights[r], key_sprite.height, symbol_sprite.height])
     # col_widths = [col_widths[i]*1.5 if (i is not 0 and i is not len(col_widths)-1) else col_widths[i] for i in range(len(col_widths))]
-    row_heights = [row_heights[i] * 1.5 if (i is not 0 and i is not len(row_heights) - 1) else row_heights[i] * 1.2 for
+    row_heights = [row_heights[i] * 1.5 if (i != 0 and i != len(row_heights) - 1) else row_heights[i] * 1.2 for
                    i in range(len(row_heights))]
     legend_graphic = CompositeGraphic()
     total_width = sum(col_widths) + (per_row - 1) * 5 + 1
@@ -660,13 +729,15 @@ def draw_default_legend(m, per_row=4):
     rl_sprite = path_to_sprite([(0, 15)], ending_style=PathEndingStyle.BEGIN_ARROW)
     dl_sprite = path_to_sprite([(0, 15)], ending_style=PathEndingStyle.ENDING_ARROW)
     cp_sprite = path_to_sprite([(3, 0), (3, 15), (3, 0), (6, 0)])
-    np_sprite = rect_to_sprite(15, 15, dash=True)
+    #np_sprite = rect_to_sprite(15, 15, dash=True)
 
-    legend_dict = dict([('Release', rl_sprite), ('Deadline', dl_sprite), ('Completion', cp_sprite), ('NP', np_sprite)])
+    #legend_dict = dict([('Release', rl_sprite), ('Deadline', dl_sprite), ('Completion', cp_sprite), ('NP', np_sprite)])
+    #legend_dict = dict([('\\textbf{Legend}', rect_to_sprite(3,3,fill_pattern=white_pattern,line_pattern=white_pattern)), ('Release', rl_sprite), ('Deadline', dl_sprite), ('Completion', cp_sprite)])#, ('NP', np_sprite)])
+    legend_dict = dict([('Release', rl_sprite), ('Deadline', dl_sprite), ('Completion', cp_sprite)])#, ('NP', np_sprite)])
 
     for j in range(m):
         proc_sprite = rect_to_sprite(15, 15, fill_pattern=sources_dict[j])
-        proc_text = '\\pi_' + str(j + 1)
+        proc_text = '$\\pi_' + str(j + 1) + '$'
         legend_dict[proc_text] = proc_sprite
 
     return draw_legend(legend_dict, per_row=per_row)
@@ -696,6 +767,63 @@ black_pattern = cairo.SolidPattern(0, 0, 0)
 white_pattern = cairo.SolidPattern(1, 1, 1)
 gray_pattern = cairo.SolidPattern(0.66, 0.66, 0.66)
 dark_gray_pattern = cairo.SolidPattern(0.33, 0.33, 0.33)
+
+red_pattern = cairo.SolidPattern(211/256,94/256,96/256)
+blue_pattern = cairo.SolidPattern(114/256,147/256,203/256)
+blue_vert_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0,0,3,3))
+blue_vert_surf_ctx = cairo.Context(blue_vert_surface)
+blue_vert_surf_ctx.set_source(blue_pattern)
+blue_vert_surf_ctx.move_to(0, 0)
+blue_vert_surf_ctx.line_to(0, 3)
+blue_vert_surf_ctx.line_to(3, 3)
+blue_vert_surf_ctx.line_to(3, 0)
+blue_vert_surf_ctx.line_to(0, 0)
+blue_vert_surf_ctx.close_path()
+blue_vert_surf_ctx.fill()
+blue_vert_surf_ctx.set_source(black_pattern)
+blue_vert_surf_ctx.move_to(3, 0)
+blue_vert_surf_ctx.line_to(3, 3)
+blue_vert_surf_ctx.stroke()
+blue_pattern = cairo.SurfacePattern(blue_vert_surface)
+blue_pattern.set_extend(cairo.Extend.REPEAT)
+
+orange_pattern = cairo.SolidPattern(225/256,151/256,76/256)
+orange_horiz_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0, 0, 3, 3))
+orange_horiz_surface_ctx = cairo.Context(orange_horiz_surface)
+orange_horiz_surface_ctx.set_source(orange_pattern)
+orange_horiz_surface_ctx.move_to(0, 0)
+orange_horiz_surface_ctx.line_to(0, 3)
+orange_horiz_surface_ctx.line_to(3, 3)
+orange_horiz_surface_ctx.line_to(3, 0)
+orange_horiz_surface_ctx.line_to(0, 0)
+orange_horiz_surface_ctx.close_path()
+orange_horiz_surface_ctx.fill()
+orange_horiz_surface_ctx.set_source(black_pattern)
+orange_horiz_surface_ctx.move_to(0, 3)
+orange_horiz_surface_ctx.line_to(3, 3)
+orange_horiz_surface_ctx.stroke()
+orange_pattern = cairo.SurfacePattern(orange_horiz_surface)
+orange_pattern.set_extend(cairo.Extend.REPEAT)
+
+purple_pattern = cairo.SolidPattern(144/256,103/256,167/256)
+purple_diag_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0, 0, 3, 3))
+purple_diag_surface_ctx = cairo.Context(purple_diag_surface)
+purple_diag_surface_ctx.set_source(purple_pattern)
+purple_diag_surface_ctx.move_to(0, 0)
+purple_diag_surface_ctx.line_to(0, 3)
+purple_diag_surface_ctx.line_to(3, 3)
+purple_diag_surface_ctx.line_to(3, 0)
+purple_diag_surface_ctx.line_to(0, 0)
+purple_diag_surface_ctx.close_path()
+purple_diag_surface_ctx.fill()
+purple_diag_surface_ctx.set_source(black_pattern)
+purple_diag_surface_ctx.move_to(3, 0)
+purple_diag_surface_ctx.line_to(3, 3)
+purple_diag_surface_ctx.line_to(0, 3)
+purple_diag_surface_ctx.stroke()
+purple_pattern = cairo.SurfacePattern(purple_diag_surface)
+purple_pattern.set_extend(cairo.Extend.REPEAT)
+
 transp_pattern = cairo.SolidPattern(0.5, 0.5, 0.5, 0.5)
 transp_white_pattern = cairo.SolidPattern(1, 1, 1, 0.25)
 no_pattern = cairo.SolidPattern(0,0,0,0)
@@ -770,6 +898,48 @@ def path_to_sprite(points, line_width=default_line_width, line_pattern=black_pat
     out = Sprite(height, width, surf)
     return out
 
+def circular_arrow(radius, begin_angle, end_angle, line_width=default_line_width, line_pattern=black_pattern,
+                   ending_style=PathEndingStyle.ENDING_DEFAULT):
+    surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+    ctx = cairo.Context(surf)
+
+    ctx.set_source(line_pattern)
+    ctx.set_line_width(line_width)
+
+    ctx.arc(radius, radius, radius, begin_angle, end_angle)
+    ctx.stroke()
+
+    if ending_style is PathEndingStyle.BEGIN_ARROW or ending_style is PathEndingStyle.BOTH_ARROW:
+        angle = begin_angle + math.pi/2
+        angle1 = angle + math.pi / 6
+        angle2 = angle - math.pi / 6
+
+        (arrx1, arry1) = (math.cos(angle1) * 4* line_width, math.sin(angle1) * 4 * line_width)
+        (arrx2, arry2) = (math.cos(angle2) * 4 * line_width, math.sin(angle2) * 4 * line_width)
+
+        # (arrx1, arry1) = scale_vector(x1*0.7 + y1*0.3, y1*0.7 - x1*0.3, 4*line_width)
+        # (arrx2, arry2) = scale_vector(x1*0.7 - y1*0.3, y1*0.7 + x1*0.3, 4*line_width)
+        (x1,y1) = (radius + radius*math.cos(begin_angle), radius + radius*math.sin((begin_angle)))
+        ctx.move_to(x1 + arrx1, y1 + arry1)
+        ctx.line_to(x1, y1)
+        ctx.line_to(x1 + arrx2, y1 + arry2)
+        ctx.stroke()
+
+    if ending_style is PathEndingStyle.ENDING_ARROW or ending_style is PathEndingStyle.BOTH_ARROW:
+        angle = end_angle + math.pi/2
+        (angle1, angle2) = (angle + math.pi / 6 + math.pi, angle - math.pi / 6 + math.pi)
+        (arrx1, arry1) = (math.cos(angle1) * 4 * line_width, math.sin(angle1) * 4 * line_width)
+        (arrx2, arry2) = (math.cos(angle2) * 4 * line_width, math.sin(angle2) * 4 * line_width)
+        # (arrx1, arry1) = scale_vector(dx*0.7 + dy*0.3, dy*0.7 - dx*0.3, 4*line_width)
+        # (arrx2, arry2) = scale_vector(dx*0.7 - dy*0.3, dy*0.7 + dx*0.3, 4*line_width)
+        (x1, y1) = (radius + radius*math.cos(end_angle), radius + radius*math.sin(end_angle))
+        ctx.move_to(x1 + arrx1, y1 + arry1)
+        ctx.line_to(x1, y1)
+        ctx.line_to(x1 + arrx2, y1 + arry2)
+        ctx.stroke()
+
+    out = Sprite(2*radius, 2*radius, surf)
+    return out
 
 def circle_to_sprite(radius, line_width=default_line_width, line_pattern=black_pattern, fill_pattern=white_pattern,
                      border=True):
@@ -873,7 +1043,7 @@ def draw_ag(ag, start_from_zero=False):
     step_size_proc = float(total_width) / (ag.m)
     for j in range(ag.m):
         circle = circle_to_sprite(proc_radius, fill_pattern=sources_dict[j])
-        inner_circle = circle_to_sprite(proc_radius * 0.6, fill_pattern=transp_white_pattern, border=False)
+        inner_circle = circle_to_sprite(proc_radius * 0.6, fill_pattern=white_pattern, border=False)
         ag_graphic.draw_center(circle, step_size_proc * (j + 0.5), proc_radius)
         ag_graphic.draw_center(inner_circle, step_size_proc * (j + 0.5), proc_radius)
         ag_graphic.draw_center(proc_labels[j], step_size_proc * (j + 0.5), proc_radius)
@@ -1010,7 +1180,8 @@ def cairo_test():
     ctx.show_page()
 
 
-sources_dict = dict([(0, white_pattern), (1, gray_pattern), (2, dark_gray_pattern)])
+#sources_dict = dict([(0, white_pattern), (1, gray_pattern), (2, dark_gray_pattern), (3, black_pattern)])
+sources_dict = dict([(0, red_pattern), (1, blue_pattern), (2, orange_pattern), (3, purple_pattern)])
 
 def rotate_sprite(sprite: Sprite) -> Sprite:
     surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
