@@ -320,7 +320,7 @@ The information needed to produce a schedule figure. Assumes indexing of tasks/p
 
 
 class SchedData:
-    def __init__(self, n_input, m_input, sched_end_min=0):
+    def __init__(self, n_input, m_input, sched_end_min=0, budg_max=0):
         self.n = n_input
         self.m = m_input
         self.executions = {}
@@ -331,6 +331,8 @@ class SchedData:
         self.pseudo_deadlines = {}
         self.pseudo_releases = {}
         self.annotations = {}
+        self.budgets = []
+        self.budg_max = budg_max
         self.sched_end = sched_end_min
         for i in range(self.n):
             self.executions[i] = []
@@ -393,8 +395,18 @@ class SchedData:
             assert (start < end)
         else:
             end = start
+        
+        self.sched_end = max([self.sched_end, end])
 
         self.annotations[task_id].append((text, start, end, justify))
+    
+    def add_budget(self, start, end, init, final):
+        assert(start < end)
+
+        self.sched_end = max([self.sched_end, end])
+
+        self.budgets.append((start, end, init, final))
+        self.budg_max = max([self.budg_max, init, final])
 
 
 def draw_sched(schedule, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True, transp_bg=True):
@@ -444,10 +456,17 @@ def draw_sched_help(schedule, start_from_zero=False, task_identifiers=None, scal
             latex_annot = latex_to_sprite(annot, is_math=False)
             annot_sprites[i].append((latex_annot, start, end, just))
             annot_heights[i] = max([annot_heights[i], latex_annot.height])
+       
 
     # compute how high each horizontal axis will be
     y_botts = [0 for i in range(schedule.n)]
     y_botts[0] = (exec_vertical_scale + vertical_spacing_scale) * task_label_height_max + annot_heights[0]
+    if schedule.budg_max > 0:
+        #budg_label = latex_to_sprite(r"C_s")
+        #task_label_height_max = max([task_label_height_max, budg_label.height])
+        #task_label_width_max = max([task_label_width_max, budg_label.width])
+        budg_bott = y_botts[0]
+        y_botts[0] += (exec_vertical_scale + vertical_spacing_scale) * task_label_height_max
 
     if schedule.n > 1:
         for i in range(1, schedule.n):
@@ -540,6 +559,25 @@ def draw_sched_help(schedule, start_from_zero=False, task_identifiers=None, scal
                 range_arrows = path_to_sprite([(scale_time_to_dots * (end - start), 0)],
                                               ending_style=PathEndingStyle.BOTH_ARROW)
                 sched_graphic.draw_left_middle(range_arrows, start_x, annot_i_y)
+    
+    if schedule.budg_max > 0:
+        # draw the budget label
+        #sched_graphic.draw_right_middle(budg_label, task_label_width_max,
+        #                                budg_bott - exec_vertical_scale / 2 * task_label_height_max)
+        # draw axis for budget
+        budg_axis = path_to_sprite([(scale_time_to_dots * (schedule.sched_end - sched_start_time) + offset_0 + extra_line, 0)],
+                                   ending_style=PathEndingStyle.ENDING_ARROW, line_pattern=transp_pattern)
+        sched_graphic.draw_left_bottom(budg_axis, task_label_width_max * horiz_offset_scale, budg_bott)
+        for (start, end, init, final) in schedule.budgets:
+            start_x = offset_0 + task_label_width_max*horiz_offset_scale + scale_time_to_dots*(start - sched_start_time)
+            end_x = offset_0 + task_label_width_max*horiz_offset_scale + scale_time_to_dots*(end - sched_start_time)
+            init_dy = task_label_height_max*exec_vertical_scale*init/schedule.budg_max
+            final_dy = task_label_height_max*final*exec_vertical_scale/schedule.budg_max
+            sched_budg = poly_to_sprite([(0,task_label_height_max*exec_vertical_scale - init_dy), 
+                (0,task_label_height_max*exec_vertical_scale), 
+                (end_x - start_x, task_label_height_max*exec_vertical_scale),
+                (end_x - start_x, task_label_height_max*exec_vertical_scale - final_dy)], fill_pattern=sol_blue_pattern, line_pattern=None)
+            sched_graphic.draw_left_bottom(sched_budg, start_x, budg_bott)
 
     # label the time axis
     time_height = 0
@@ -768,6 +806,7 @@ white_pattern = cairo.SolidPattern(1, 1, 1)
 gray_pattern = cairo.SolidPattern(0.66, 0.66, 0.66)
 dark_gray_pattern = cairo.SolidPattern(0.33, 0.33, 0.33)
 
+sol_blue_pattern = cairo.SolidPattern(0,0,1)
 red_pattern = cairo.SolidPattern(211/256,94/256,96/256)
 blue_pattern = cairo.SolidPattern(114/256,147/256,203/256)
 blue_vert_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0,0,3,3))
@@ -989,6 +1028,38 @@ def rect_to_sprite(height, width, line_width=0.5, line_pattern=black_pattern, fi
     out = Sprite(height, width, surf)
     return out
 
+
+def poly_to_sprite(pts, line_width=0.5, line_pattern=black_pattern, fill_pattern=white_pattern):
+    assert(len(pts) > 1)
+    for pt in pts:
+        assert(pt[0] >= 0 and pt[1] >= 0)
+    
+    surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+    ctx = cairo.Context(surf)
+
+    max_y = 0
+    max_x = 0
+
+    ctx.set_source(fill_pattern)
+    ctx.move_to(pts[0][0], pts[0][1])
+    for pt in pts[1:]:
+        ctx.line_to(pt[0], pt[1])
+        max_x = max([max_x, pt[0]])
+        max_y = max([max_y, pt[1]])
+    ctx.close_path()
+    ctx.fill()
+
+    if line_pattern is not None:
+        ctx.set_line_width(line_width)
+        ctx.set_source(line_pattern)
+        ctx.move_to(pts[0][0],pts[0][1])
+        for pt in pts[1:]:
+            ctx.line_to(pt[0], pt[1])
+        ctx.close_path()
+        ctx.stroke()
+
+    out = Sprite(max_y, max_x, surf)
+    return out
 
 class AffinityGraph:
     def __init__(self, n_input, m_input):
