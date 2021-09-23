@@ -302,6 +302,10 @@ class PaperGraphic(CompositeGraphic):
             surf.write_to_png(self.name + '.png')
         else:
             print("Unknown format given to publish!")
+    
+    def draw_publish(self, src, format="pdf"):
+        self.draw_left_top(src)
+        self.publish(format)
 
     def preview(self):
         CompositeGraphic.update_cached_surface(self)
@@ -619,6 +623,7 @@ latex_frequent_dict = dict([('\\tau_0', ('tau_0.svg', 9.784, 12.825)), \
                             ('\\tau_3', ('tau_3.svg', 9.784, 12.825)), \
                             ('\\tau_4', ('tau_4.svg', 9.784, 12.825)), \
                             ('\\tau_5', ('tau_5.svg', 9.784, 12.825)), \
+                            ('\\tau_s', ('tau_s.svg', 9.784, 12.825)), \
                             ('\\pi_0', ('pi_0.svg', 9.784, 14.148)), \
                             ('\\pi_1', ('pi_1.svg', 9.784, 14.148)), \
                             ('\\pi_2', ('pi_2.svg', 9.784, 14.148)), \

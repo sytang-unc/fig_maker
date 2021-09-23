@@ -1,2 +1,3 @@
 tmp_data/*
 !tmp_data/.gitkeep
+__pycache__
