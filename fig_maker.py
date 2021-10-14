@@ -391,6 +391,10 @@ class SchedData:
         self.pseudo_deadlines[task_id].append(t)
 
         self.sched_end = max([self.sched_end, t])
+    
+    def add_rd(self, task_id, t):
+        self.add_release(task_id, t)
+        self.add_deadline(task_id, t)
 
     def add_annotation(self, task_id, text, start, end=-1, justify="middle"):
         assert (task_id < self.n)
@@ -873,6 +877,8 @@ transp_white_pattern = cairo.SolidPattern(1, 1, 1, 0.25)
 no_pattern = cairo.SolidPattern(0,0,0,0)
 default_line_width = 0.5
 
+green_pattern = cairo.SolidPattern(0,1,0)
+
 
 class PathEndingStyle:
     ENDING_DEFAULT = 0
@@ -1017,18 +1023,19 @@ def rect_to_sprite(height, width, line_width=0.5, line_pattern=black_pattern, fi
     ctx.close_path()
     ctx.fill()
 
-    if dash:
-        ctx.set_dash([3, 1])
-    ctx.set_line_width(line_width)
-    ctx.set_source(line_pattern)
-    ctx.move_to(0, 0)
-    ctx.line_to(width, 0)
-    ctx.line_to(width, height)
-    ctx.line_to(0, height)
-    ctx.close_path()
-    ctx.stroke()
-    if dash:
-        ctx.set_dash([])
+    if line_pattern is not None:
+        if dash:
+            ctx.set_dash([3, 1])
+        ctx.set_line_width(line_width)
+        ctx.set_source(line_pattern)
+        ctx.move_to(0, 0)
+        ctx.line_to(width, 0)
+        ctx.line_to(width, height)
+        ctx.line_to(0, height)
+        ctx.close_path()
+        ctx.stroke()
+        if dash:
+            ctx.set_dash([])
 
     out = Sprite(height, width, surf)
     return out
