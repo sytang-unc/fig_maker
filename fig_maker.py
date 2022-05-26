@@ -1,4 +1,5 @@
 # used to render graphics
+from typing import List, Tuple
 import cairo
 # unused curently
 import csv
@@ -57,7 +58,7 @@ class Drawable:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
-    def draw_published(self, ctx, x, y) -> None:
+    def draw_published(self, ctx, x, y, alpha=1.0) -> None:
         print("Fell back to abstract method in Drawable!")
         assert (False)
 
@@ -88,9 +89,12 @@ class Sprite(Drawable):
     def update_published_surface(self):
         return
 
-    def draw_published(self, ctx, x, y):
+    def draw_published(self, ctx, x, y, alpha=1.0):
         ctx.set_source_surface(self.surface, x, y)
-        ctx.paint()
+        if alpha == 1.0:
+            ctx.paint()
+        else:
+            ctx.paint_with_alpha(alpha)
 
 
 """
@@ -117,7 +121,7 @@ class Blank(Drawable):
     def update_published_surface(self):
         return
 
-    def draw_published(self, ctx, x, y):
+    def draw_published(self, ctx, x, y, alpha=1.0):
         return
 
 
@@ -150,6 +154,9 @@ class CompositeGraphic(Drawable):
         return False
 
     def _add_element(self, draw_src, x, y):
+        assert(x >= 0)
+        assert(y >= 0)
+
         # confirm that this doesn't introduce cycles
         if isinstance(draw_src, CompositeGraphic) and self._is_inbreeding(draw_src):
             print("Child is also ancestor")
@@ -165,6 +172,7 @@ class CompositeGraphic(Drawable):
         self._alert_change()
 
         return True
+    
 
     def _alert_change(self):
         self.cached_surface = None
@@ -260,9 +268,12 @@ class CompositeGraphic(Drawable):
             drawable.draw_published(ctx, x, y)
         self.pub_surface = surf
 
-    def draw_published(self, ctx, x, y):
+    def draw_published(self, ctx, x, y, alpha=1.0):
         ctx.set_source_surface(self.pub_surface, x, y)
-        ctx.paint()
+        if alpha == 1.0:
+            ctx.paint()
+        else:
+            ctx.paint_with_alpha(alpha)
 
 
 """
@@ -276,13 +287,13 @@ class PaperGraphic(CompositeGraphic):
     def __init__(self, name_input):
         CompositeGraphic.__init__(self, name_input)
 
-    def publish(self, format="pdf"):
+    def publish(self, format="pdf", buffer=10):
         CompositeGraphic.update_published_surface(self)
         if format == "pdf":
-            surf = cairo.PDFSurface(self.name + '.pdf', self.width + 10, self.height + 10)
+            surf = cairo.PDFSurface(self.name + '.pdf', self.width + buffer, self.height + buffer)
             #surf = cairo.SVGSurface(self.name + '.svg', self.width + 10, self.height + 10)
             ctx = cairo.Context(surf)
-            ctx.set_source_surface(self.pub_surface, 5, 5)
+            ctx.set_source_surface(self.pub_surface, buffer/2, buffer/2)
             #ctx.save()
             #ctx.scale(preview_scale,preview_scale)
             #ctx.set_source_surface(self.pub_surface, 0.1*self.width, 0.1*self.height)
@@ -303,9 +314,9 @@ class PaperGraphic(CompositeGraphic):
         else:
             print("Unknown format given to publish!")
     
-    def draw_publish(self, src, format="pdf"):
+    def draw_publish(self, src, format="pdf", buffer=10):
         self.draw_left_top(src)
-        self.publish(format)
+        self.publish(format, buffer)
 
     def preview(self):
         CompositeGraphic.update_cached_surface(self)
@@ -318,13 +329,113 @@ class PaperGraphic(CompositeGraphic):
         surf.write_to_png(self.name + '.png')
 
 
+black_pattern = cairo.SolidPattern(0, 0, 0)
+white_pattern = cairo.SolidPattern(1, 1, 1)
+gray_pattern = cairo.SolidPattern(0.66, 0.66, 0.66)
+dark_gray_pattern = cairo.SolidPattern(0.33, 0.33, 0.33)
+
+sol_blue_pattern = cairo.SolidPattern(0,0,1)
+red_pattern = cairo.SolidPattern(211/256,94/256,96/256)
+transp_red_pattern = cairo.SolidPattern(211/256,94/256,96/256,0.5)
+blue_pattern = cairo.SolidPattern(114/256,147/256,203/256)
+standard_blue_pattern = blue_pattern
+blue_vert_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0,0,3,3))
+blue_vert_surf_ctx = cairo.Context(blue_vert_surface)
+blue_vert_surf_ctx.set_source(blue_pattern)
+blue_vert_surf_ctx.move_to(0, 0)
+blue_vert_surf_ctx.line_to(0, 3)
+blue_vert_surf_ctx.line_to(3, 3)
+blue_vert_surf_ctx.line_to(3, 0)
+blue_vert_surf_ctx.line_to(0, 0)
+blue_vert_surf_ctx.close_path()
+blue_vert_surf_ctx.fill()
+blue_vert_surf_ctx.set_source(black_pattern)
+blue_vert_surf_ctx.move_to(3, 0)
+blue_vert_surf_ctx.line_to(3, 3)
+blue_vert_surf_ctx.stroke()
+blue_pattern = cairo.SurfacePattern(blue_vert_surface)
+blue_pattern.set_extend(cairo.Extend.REPEAT)
+
+orange_pattern = cairo.SolidPattern(225/256,151/256,76/256)
+standard_orange_pattern = orange_pattern
+orange_horiz_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0, 0, 3, 3))
+orange_horiz_surface_ctx = cairo.Context(orange_horiz_surface)
+orange_horiz_surface_ctx.set_source(orange_pattern)
+orange_horiz_surface_ctx.move_to(0, 0)
+orange_horiz_surface_ctx.line_to(0, 3)
+orange_horiz_surface_ctx.line_to(3, 3)
+orange_horiz_surface_ctx.line_to(3, 0)
+orange_horiz_surface_ctx.line_to(0, 0)
+orange_horiz_surface_ctx.close_path()
+orange_horiz_surface_ctx.fill()
+orange_horiz_surface_ctx.set_source(black_pattern)
+orange_horiz_surface_ctx.move_to(0, 3)
+orange_horiz_surface_ctx.line_to(3, 3)
+orange_horiz_surface_ctx.stroke()
+orange_pattern = cairo.SurfacePattern(orange_horiz_surface)
+orange_pattern.set_extend(cairo.Extend.REPEAT)
+
+purple_pattern = cairo.SolidPattern(144/256,103/256,167/256)
+purple_diag_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0, 0, 3, 3))
+purple_diag_surface_ctx = cairo.Context(purple_diag_surface)
+purple_diag_surface_ctx.set_source(purple_pattern)
+purple_diag_surface_ctx.move_to(0, 0)
+purple_diag_surface_ctx.line_to(0, 3)
+purple_diag_surface_ctx.line_to(3, 3)
+purple_diag_surface_ctx.line_to(3, 0)
+purple_diag_surface_ctx.line_to(0, 0)
+purple_diag_surface_ctx.close_path()
+purple_diag_surface_ctx.fill()
+purple_diag_surface_ctx.set_source(black_pattern)
+purple_diag_surface_ctx.move_to(3, 0)
+purple_diag_surface_ctx.line_to(3, 3)
+purple_diag_surface_ctx.line_to(0, 3)
+purple_diag_surface_ctx.stroke()
+purple_pattern = cairo.SurfacePattern(purple_diag_surface)
+purple_pattern.set_extend(cairo.Extend.REPEAT)
+
+transp_pattern = cairo.SolidPattern(0.5, 0.5, 0.5, 0.5)
+transp_white_pattern = cairo.SolidPattern(1, 1, 1, 0.25)
+no_pattern = cairo.SolidPattern(0,0,0,0)
+default_line_width = 0.5
+
+green_diag_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0,0,30,30))
+green_diag_surface_ctx = cairo.Context(green_diag_surface)
+green_diag_surface_ctx.set_source(cairo.SolidPattern(65/256, 140/256, 34/256))
+green_diag_surface_ctx.move_to(0,0)
+green_diag_surface_ctx.line_to(0,30)
+green_diag_surface_ctx.line_to(30,30)
+green_diag_surface_ctx.line_to(30,0)
+green_diag_surface_ctx.line_to(0,0)
+green_diag_surface_ctx.close_path()
+green_diag_surface_ctx.fill()
+green_diag_surface_ctx.set_source(black_pattern)
+green_diag_surface_ctx.set_line_width(2.0/math.sqrt(2))
+for i in range(1,10):
+    green_diag_surface_ctx.move_to(3*i,30)
+    green_diag_surface_ctx.line_to(0, 30-3*i)
+    green_diag_surface_ctx.stroke()
+    green_diag_surface_ctx.move_to(30,3*i)
+    green_diag_surface_ctx.line_to(30-3*i,0)
+    green_diag_surface_ctx.stroke()
+green_diag_surface_ctx.move_to(30,30)
+green_diag_surface_ctx.line_to(0,0)
+green_diag_surface_ctx.stroke()
+green_diag_surface_ctx.move_to(3,3)
+green_diag_surface_ctx.line_to(0,0)
+green_diag_surface_ctx.stroke()
+green_diag_pattern = cairo.SurfacePattern(green_diag_surface)
+green_diag_pattern.set_extend(cairo.Extend.REPEAT)
+
+green_pattern = cairo.SolidPattern(0,1,0)
+
 """
 The information needed to produce a schedule figure. Assumes indexing of tasks/procs begins at 0
 """
 
 
 class SchedData:
-    def __init__(self, n_input, m_input, sched_end_min=0, budg_max=0):
+    def __init__(self, n_input, m_input, sched_end_min=0, budg_max=0, s_max = 1.0):
         self.n = n_input
         self.m = m_input
         self.executions = {}
@@ -338,6 +449,7 @@ class SchedData:
         self.budgets = []
         self.budg_max = budg_max
         self.sched_end = sched_end_min
+        self.s_max = s_max
         for i in range(self.n):
             self.executions[i] = []
             self.np_executions[i] = []
@@ -348,17 +460,18 @@ class SchedData:
             self.pseudo_deadlines[i] = []
             self.annotations[i] = []
 
-    def add_execution(self, task_id, proc, start_time, end_time):
+    def add_execution(self, task_id, proc, start_time, end_time, speed=1.0):
+        assert(speed <= self.s_max)
         assert (proc < self.m and task_id < self.n)
         assert (start_time < end_time and start_time >= 0)
-        self.executions[task_id].append((proc, start_time, end_time))
+        self.executions[task_id].append((proc, start_time, end_time, speed))
 
         self.sched_end = max([self.sched_end, end_time])
 
-    def add_np_execution(self, task_id, proc, start_time, end_time):
+    def add_np_execution(self, task_id, proc, start_time, end_time, speed=1.0):
         assert (proc < self.m and task_id < self.n)
         assert (start_time < end_time and start_time >= 0)
-        self.np_executions[task_id].append((proc, start_time, end_time))
+        self.np_executions[task_id].append((proc, start_time, end_time, speed))
 
         self.sched_end = max([self.sched_end, end_time])
 
@@ -417,14 +530,39 @@ class SchedData:
         self.budg_max = max([self.budg_max, init, final])
 
 
-def draw_sched(schedule, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True, transp_bg=True):
-    sched_graphic = draw_sched_help(schedule, start_from_zero, task_identifiers, scale_time_to_dots, time_axis_inc, sched_start_time, draw_time)
+def draw_sched(schedule, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True, draw_time_txt=True, transp_bg=True, title=None, draw_speed_line=False):
+    sched_graphic = draw_sched_help(schedule, start_from_zero, task_identifiers, scale_time_to_dots, time_axis_inc, sched_start_time, draw_time, draw_time_txt, draw_speed_line)
+    if title is not None:
+        title_txt = latex_to_sprite(title, is_math=False)
+        cg = CompositeGraphic()
+        cg.draw_center_top(title_txt, max([title_txt.width, sched_graphic.width])/2, 0)
+        cg.draw_center_top(sched_graphic, max([title_txt.width, sched_graphic.width])/2, title_txt.height)
+        sched_graphic = cg
     if transp_bg:
         return sched_graphic
     tot_graphic = CompositeGraphic()
     tot_graphic.draw_left_top(rect_to_sprite(sched_graphic.height, sched_graphic.width))
     tot_graphic.draw_left_top(sched_graphic)
     return tot_graphic
+
+"""
+proc, start, end, speed
+"""
+def join_intervals(intervals: List[Tuple[int, float, float, float]]) -> List[Tuple[int, float,float,float]]:
+    if len(intervals) <= 1:
+        return intervals
+    new_intervals: List[Tuple[int, float,float,float]] = []
+    rm_first = intervals[1:]
+    proc, start, end, speed = intervals[0]
+    for proc2, start2, end2, speed2 in rm_first:
+        if proc != proc2 or speed != speed2 or start2 > end:
+            new_intervals.append((proc,start,end,speed))
+            proc, start, end, speed = (proc2, start2, end2, speed2)
+        else:
+            end = end2
+    new_intervals.append((proc, start, end, speed))
+    return new_intervals
+
 
 """
 Render a given SchedData
@@ -434,7 +572,7 @@ INPUT
 """
 
 
-def draw_sched_help(schedule, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True):
+def draw_sched_help(schedule: SchedData, start_from_zero=False, task_identifiers=None, scale_time_to_dots=10, time_axis_inc=5, sched_start_time=0, draw_time=True, draw_time_txt=True, draw_speed_line=False):
     sched_graphic = CompositeGraphic()
 
     # spaceing constants. Everything that is scaled is relative to label dimensions
@@ -512,21 +650,27 @@ def draw_sched_help(schedule, start_from_zero=False, task_identifiers=None, scal
         # draw axis for task
         task_axis = path_to_sprite([(scale_time_to_dots * (schedule.sched_end - sched_start_time) + offset_0 + extra_line, 0)],
                                    ending_style=PathEndingStyle.ENDING_ARROW, line_pattern=transp_pattern)
-        sched_graphic.draw_left_bottom(task_axis, task_label_width_max * horiz_offset_scale, y_botts[i])
+        
+        
         # draw each block of execution for this task
-        for (proc, start_time, end_time) in schedule.executions[i]:
-            sched_block = rect_to_sprite(task_label_height_max * exec_vertical_scale,
-                                         scale_time_to_dots * (end_time - start_time), fill_pattern=sources_dict[proc])
+        for (proc, start_time, end_time, speed) in join_intervals(schedule.executions[i]):
+            sched_block = rect_to_sprite(task_label_height_max * exec_vertical_scale * speed/schedule.s_max,
+                                         scale_time_to_dots * (end_time - start_time), fill_pattern=sources_dict[proc], line_pattern=None)
             sched_graphic.draw_left_bottom(sched_block,
                                            offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (start_time - sched_start_time),
                                            y_botts[i])
-        for (proc, start_time, end_time) in schedule.np_executions[i]:
-            sched_block = rect_to_sprite(task_label_height_max * exec_vertical_scale,
+        for (proc, start_time, end_time, speed) in join_intervals(schedule.np_executions[i]):
+            sched_block = rect_to_sprite(task_label_height_max * exec_vertical_scale * speed/schedule.s_max,
                                          scale_time_to_dots * (end_time - start_time), fill_pattern=sources_dict[proc],
                                          dash=True)
             sched_graphic.draw_left_bottom(sched_block,
                                            offset_0 + task_label_width_max * horiz_offset_scale + scale_time_to_dots * (start_time - sched_start_time),
                                            y_botts[i])
+        sched_graphic.draw_left_bottom(task_axis, task_label_width_max * horiz_offset_scale, y_botts[i])
+        if draw_speed_line:
+            speed_axis = path_to_sprite([(scale_time_to_dots * (schedule.sched_end - sched_start_time) + offset_0 + extra_line, 0)],
+                                   line_pattern=transp_pattern, dash=True)
+            sched_graphic.draw_left_bottom(speed_axis, task_label_width_max*horiz_offset_scale, y_botts[i] + task_label_height_max * exec_vertical_scale * 1.0/schedule.s_max)
 
         # draw releases/completions
         for t in schedule.releases[i]:
@@ -604,9 +748,10 @@ def draw_sched_help(schedule, start_from_zero=False, task_identifiers=None, scal
                                        task_label_width_max * horiz_offset_scale + offset_0 + scale_time_to_dots * (t-sched_start_time),
                                        last_axis_y)
 
-    time_text = latex_to_sprite("Time", is_math=False)
-    sched_width = sched_graphic.width - task_label_width_max * horiz_offset_scale
-    sched_graphic.draw_center_top(time_text, task_label_width_max * horiz_offset_scale + sched_width / 2,
+    if draw_time_txt:
+        time_text = latex_to_sprite("Time", is_math=False)
+        sched_width = sched_graphic.width - task_label_width_max * horiz_offset_scale
+        sched_graphic.draw_center_top(time_text, task_label_width_max * horiz_offset_scale + sched_width / 2,
                                   last_axis_y + time_height)
 
     return sched_graphic
@@ -627,22 +772,48 @@ latex_frequent_dict = dict([('\\tau_0', ('tau_0.svg', 9.784, 12.825)), \
                             ('\\tau_3', ('tau_3.svg', 9.784, 12.825)), \
                             ('\\tau_4', ('tau_4.svg', 9.784, 12.825)), \
                             ('\\tau_5', ('tau_5.svg', 9.784, 12.825)), \
+                            ('\\tau_6', ('tau_6.svg', 9.784, 12.825)), \
                             ('\\tau_s', ('tau_s.svg', 9.784, 12.825)), \
+                            ('\\tau_i', ('tau_i.svg', 9.784, 12.825)), \
                             ('\\pi_0', ('pi_0.svg', 9.784, 14.148)), \
                             ('\\pi_1', ('pi_1.svg', 9.784, 14.148)), \
                             ('\\pi_2', ('pi_2.svg', 9.784, 14.148)), \
                             ('\\pi_3', ('pi_3.svg', 9.784, 14.148)), \
+                            ('\\pi_4', ('pi_4.svg', 9.784, 14.148)), \
+                            ('\\pi_5', ('pi_5.svg', 9.784, 14.148)), \
+                            ('\\theta_1', ('theta_1.svg', 12.413, 13.146)), \
+                            ('\\theta_2', ('theta_2.svg', 12.413, 13.146)), \
+                            ('\\phi_1', ('phi_1.svg', 12.856, 14.405)), \
+                            ('\\phi_2', ('phi_2.svg', 12.856, 14.405)), \
+                            ('\\Phi_1', ('Phi_1.svg', 12.302, 15.665)), \
+                            ('\\Phi_2', ('Phi_2.svg', 12.302, 15.665)), \
                             ('0', ('0.svg', 10.42, 8.981)), \
+                            ('1', ('1.svg', 10.42, 8.981)), \
+                            ('2', ('2.svg', 10.42, 8.981)), \
+                            ('3', ('3.svg', 10.42, 8.981)), \
+                            ('4', ('4.svg', 10.42, 8.981)), \
                             ('5', ('5.svg', 10.42, 8.981)), \
+                            ('6', ('6.svg', 10.42, 8.981)), \
+                            ('7', ('7.svg', 10.42, 8.981)), \
+                            ('8', ('8.svg', 10.42, 8.981)), \
+                            ('9', ('9.svg', 10.42, 8.981)), \
                             ('10', ('10.svg', 10.42, 13.963)), \
+                            ('12', ('12.svg', 10.42, 13.963)), \
+                            ('14', ('14.svg', 10.42, 13.963)), \
                             ('15', ('15.svg', 10.42, 13.963)), \
+                            ('16', ('16.svg', 10.42, 13.963)), \
+                            ('18', ('18.svg', 10.42, 13.963)), \
                             ('20', ('20.svg', 10.42, 13.963)), \
+                            ('22', ('22.svg', 10.42, 13.963)), \
+                            ('24', ('24.svg', 10.42, 13.963)), \
                             ('25', ('25.svg', 10.42, 13.963)), \
                             ('30', ('30.svg', 10.42, 13.963)), \
                             ('Time', ('Time.svg', 10.808, 26.693)), \
                             ('Release', ('Release.svg', 10.918, 36.296)), \
                             ('Deadline', ('Deadline.svg', 10.918, 42.052)), \
-                            ('Completion', ('Completion.svg', 12.856, 54.367))])
+                            ('Completion', ('Completion.svg', 12.856, 54.367)), \
+                            ('Original', ('Original.svg', 12.856, 39.45)),
+                            ('Ideal', ('Ideal.svg', 10.918, 25.309))])
 
 """
 Directory for transient files
@@ -658,7 +829,7 @@ OUTPUT
 """
 
 
-def latex_to_sprite(text, is_math=True):
+def latex_to_sprite(text, is_math=True, col=black_pattern) -> Sprite:
     svgfile = ''
     height = 0
     width = 0
@@ -666,9 +837,11 @@ def latex_to_sprite(text, is_math=True):
         (svgname, height, width) = latex_frequent_dict[text]
         svgfile = freq_dir + svgname
     else:
+        print(text)
         with open(tmp_dir + 'tmp.tex', 'w') as tmp_tex:
             tmp_tex.write('\\documentclass[varwidth, border=2]{standalone}\n')
             tmp_tex.write('\\usepackage{amsmath}\n')
+            tmp_tex.write('\\usepackage{xcolor}\n')
             tmp_tex.write('\\begin{document}\n')
             if is_math:
                 tmp_tex.write('$')
@@ -698,10 +871,27 @@ def latex_to_sprite(text, is_math=True):
     # close is apparently depreciated? Find out how to properly close the svg later
     svg.close()
 
-    out = Sprite(height, width, surface, text)
+
+    if col is not black_pattern:
+        surf2 = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+        ctx2 = cairo.Context(surf2)
+        ctx2.set_source(col)
+        ctx2.mask_surface(surface, 0, 0)
+        ctx2.fill()
+        out = Sprite(height, width, surf2, text)
+    else:
+        out = Sprite(height, width, surface, text)
 
     return out
 
+
+def box(width: int, height: int, image: Drawable):
+    assert(width >= image.width)
+    assert(height >= image.height)
+    out = CompositeGraphic()
+    out.draw_left_top(rect_to_sprite(height, width))
+    out.draw_center(image, width/2, height/2)
+    return out
 
 def get_pdf_page_size(pdf_name):
     height = 0
@@ -810,74 +1000,7 @@ def draw_default_ag_legend(per_row=3):
     return draw_legend(legend_dict, per_row=per_row)
 
 
-black_pattern = cairo.SolidPattern(0, 0, 0)
-white_pattern = cairo.SolidPattern(1, 1, 1)
-gray_pattern = cairo.SolidPattern(0.66, 0.66, 0.66)
-dark_gray_pattern = cairo.SolidPattern(0.33, 0.33, 0.33)
 
-sol_blue_pattern = cairo.SolidPattern(0,0,1)
-red_pattern = cairo.SolidPattern(211/256,94/256,96/256)
-blue_pattern = cairo.SolidPattern(114/256,147/256,203/256)
-blue_vert_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0,0,3,3))
-blue_vert_surf_ctx = cairo.Context(blue_vert_surface)
-blue_vert_surf_ctx.set_source(blue_pattern)
-blue_vert_surf_ctx.move_to(0, 0)
-blue_vert_surf_ctx.line_to(0, 3)
-blue_vert_surf_ctx.line_to(3, 3)
-blue_vert_surf_ctx.line_to(3, 0)
-blue_vert_surf_ctx.line_to(0, 0)
-blue_vert_surf_ctx.close_path()
-blue_vert_surf_ctx.fill()
-blue_vert_surf_ctx.set_source(black_pattern)
-blue_vert_surf_ctx.move_to(3, 0)
-blue_vert_surf_ctx.line_to(3, 3)
-blue_vert_surf_ctx.stroke()
-blue_pattern = cairo.SurfacePattern(blue_vert_surface)
-blue_pattern.set_extend(cairo.Extend.REPEAT)
-
-orange_pattern = cairo.SolidPattern(225/256,151/256,76/256)
-orange_horiz_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0, 0, 3, 3))
-orange_horiz_surface_ctx = cairo.Context(orange_horiz_surface)
-orange_horiz_surface_ctx.set_source(orange_pattern)
-orange_horiz_surface_ctx.move_to(0, 0)
-orange_horiz_surface_ctx.line_to(0, 3)
-orange_horiz_surface_ctx.line_to(3, 3)
-orange_horiz_surface_ctx.line_to(3, 0)
-orange_horiz_surface_ctx.line_to(0, 0)
-orange_horiz_surface_ctx.close_path()
-orange_horiz_surface_ctx.fill()
-orange_horiz_surface_ctx.set_source(black_pattern)
-orange_horiz_surface_ctx.move_to(0, 3)
-orange_horiz_surface_ctx.line_to(3, 3)
-orange_horiz_surface_ctx.stroke()
-orange_pattern = cairo.SurfacePattern(orange_horiz_surface)
-orange_pattern.set_extend(cairo.Extend.REPEAT)
-
-purple_pattern = cairo.SolidPattern(144/256,103/256,167/256)
-purple_diag_surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, cairo.Rectangle(0, 0, 3, 3))
-purple_diag_surface_ctx = cairo.Context(purple_diag_surface)
-purple_diag_surface_ctx.set_source(purple_pattern)
-purple_diag_surface_ctx.move_to(0, 0)
-purple_diag_surface_ctx.line_to(0, 3)
-purple_diag_surface_ctx.line_to(3, 3)
-purple_diag_surface_ctx.line_to(3, 0)
-purple_diag_surface_ctx.line_to(0, 0)
-purple_diag_surface_ctx.close_path()
-purple_diag_surface_ctx.fill()
-purple_diag_surface_ctx.set_source(black_pattern)
-purple_diag_surface_ctx.move_to(3, 0)
-purple_diag_surface_ctx.line_to(3, 3)
-purple_diag_surface_ctx.line_to(0, 3)
-purple_diag_surface_ctx.stroke()
-purple_pattern = cairo.SurfacePattern(purple_diag_surface)
-purple_pattern.set_extend(cairo.Extend.REPEAT)
-
-transp_pattern = cairo.SolidPattern(0.5, 0.5, 0.5, 0.5)
-transp_white_pattern = cairo.SolidPattern(1, 1, 1, 0.25)
-no_pattern = cairo.SolidPattern(0,0,0,0)
-default_line_width = 0.5
-
-green_pattern = cairo.SolidPattern(0,1,0)
 
 
 class PathEndingStyle:
@@ -893,11 +1016,18 @@ class PathEndingStyle:
 
 def path_to_sprite(points, line_width=default_line_width, line_pattern=black_pattern,
                    ending_style=PathEndingStyle.ENDING_DEFAULT, dash=False, offset=0, dashArr=[1,4]):
+
+    xmin = ymin = 0
+    for pt in points:
+        x,y = pt
+        xmin = min([x, xmin])
+        ymin = min([y, ymin])
+
     surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
     ctx = cairo.Context(surf)
 
-    height = 0
-    width = 0
+    max_y = 0
+    max_x = 0
 
     ctx.set_line_width(line_width)
     ctx.set_source(line_pattern)
@@ -922,8 +1052,8 @@ def path_to_sprite(points, line_width=default_line_width, line_pattern=black_pat
         ctx.set_dash(dashArr, offset)
     for (x, y) in points:
         ctx.line_to(x, y)
-        height = max([height, y])
-        width = max([width, x])
+        max_y = max([max_y, y])
+        max_x = max([max_x, x])
     ctx.stroke()
     if dash:
         ctx.set_dash([])
@@ -944,8 +1074,15 @@ def path_to_sprite(points, line_width=default_line_width, line_pattern=black_pat
         ctx.line_to(x1, y1)
         ctx.line_to(x1 + arrx2, y1 + arry2)
         ctx.stroke()
-
-    out = Sprite(height, width, surf)
+    
+    if xmin < 0 or ymin < 0:
+        surf2 = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+        ctx = cairo.Context(surf2)
+        ctx.set_source_surface(surf, -xmin, -ymin)
+        ctx.paint()
+        out = Sprite(max_y - ymin, max_x - xmin, surf2)
+    else:
+        out = Sprite(max_y, max_x, surf)
     return out
 
 def circular_arrow(radius, begin_angle, end_angle, line_width=default_line_width, line_pattern=black_pattern,
@@ -1015,13 +1152,14 @@ def rect_to_sprite(height, width, line_width=0.5, line_pattern=black_pattern, fi
     surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
     ctx = cairo.Context(surf)
 
-    ctx.set_source(fill_pattern)
-    ctx.move_to(0, 0)
-    ctx.line_to(width, 0)
-    ctx.line_to(width, height)
-    ctx.line_to(0, height)
-    ctx.close_path()
-    ctx.fill()
+    if fill_pattern is not None:
+        ctx.set_source(fill_pattern)
+        ctx.move_to(0, 0)
+        ctx.line_to(width, 0)
+        ctx.line_to(width, height)
+        ctx.line_to(0, height)
+        ctx.close_path()
+        ctx.fill()
 
     if line_pattern is not None:
         if dash:
@@ -1041,7 +1179,7 @@ def rect_to_sprite(height, width, line_width=0.5, line_pattern=black_pattern, fi
     return out
 
 
-def poly_to_sprite(pts, line_width=0.5, line_pattern=black_pattern, fill_pattern=white_pattern):
+def poly_to_sprite(pts, line_width=0.5, line_pattern=black_pattern, fill_pattern=white_pattern, dash=False):
     assert(len(pts) > 1)
     for pt in pts:
         assert(pt[0] >= 0 and pt[1] >= 0)
@@ -1052,16 +1190,20 @@ def poly_to_sprite(pts, line_width=0.5, line_pattern=black_pattern, fill_pattern
     max_y = 0
     max_x = 0
 
-    ctx.set_source(fill_pattern)
+    if fill_pattern is not None:
+        ctx.set_source(fill_pattern)
     ctx.move_to(pts[0][0], pts[0][1])
     for pt in pts[1:]:
         ctx.line_to(pt[0], pt[1])
         max_x = max([max_x, pt[0]])
         max_y = max([max_y, pt[1]])
     ctx.close_path()
-    ctx.fill()
+    if fill_pattern is not None:
+        ctx.fill()
 
     if line_pattern is not None:
+        if dash:
+            ctx.set_dash([2, 2])
         ctx.set_line_width(line_width)
         ctx.set_source(line_pattern)
         ctx.move_to(pts[0][0],pts[0][1])
@@ -1069,14 +1211,33 @@ def poly_to_sprite(pts, line_width=0.5, line_pattern=black_pattern, fill_pattern
             ctx.line_to(pt[0], pt[1])
         ctx.close_path()
         ctx.stroke()
+        if dash:
+            ctx.set_dash([])
 
     out = Sprite(max_y, max_x, surf)
     return out
 
+def textbox(text, is_math=True, width = None, height = None, line_pattern=black_pattern, line_width=default_line_width, col=black_pattern):
+    txt = latex_to_sprite(text, is_math=is_math, col=col)
+    if width is None:
+        width = txt.width
+    if height is None:
+        height = txt.height
+    assert(width >= txt.width)
+    assert(height >= txt.height)
+    out = CompositeGraphic()
+    out.draw_left_top(rect_to_sprite(height, width, line_pattern=line_pattern, line_width=line_width))
+    out.draw_center(txt, width/2, height/2)
+    return out
+
 class AffinityGraph:
-    def __init__(self, n_input, m_input):
+    def __init__(self, n_input, m_input, speeds=None):
         self.n = n_input
         self.m = m_input
+        if speeds is None:
+            self.speeds = [1.0 for j in range(m_input)]
+        else:
+            self.speeds = speeds
         self.edges = []
         self.assignments = []
         self.np_assignments = []
@@ -1086,6 +1247,14 @@ class AffinityGraph:
         assert (task_id < self.n and proc_id < self.m)
         self.edges.append((task_id, proc_id))
 
+    def add_edges(self, task_id, proc_ids):
+        for j in proc_ids:
+            self.add_edge(task_id, j)
+
+    def make_global(self, task_id):
+        for j in range(self.m):
+            self.add_edge(task_id, j)
+
     def add_assign(self, task_id, proc_id):
         assert ((task_id, proc_id) in self.edges)
         self.assignments.append((task_id, proc_id))
@@ -1094,13 +1263,16 @@ class AffinityGraph:
         assert ((task_id, proc_id) in self.edges)
         self.np_assignments.append((task_id, proc_id))
 
-    def add_link(self, task_id, proc_id):
+    def add_link(self, task_id, proc_id, rev=False):
         assert ((task_id, proc_id) in self.edges)
-        self.links.append((task_id, proc_id))
+        self.links.append((task_id, proc_id, rev))
 
     def clear_assign(self):
         self.assignments = []
         self.np_assignments = []
+        self.links = []
+    
+    def clear_link(self):
         self.links = []
 
 
@@ -1114,7 +1286,10 @@ def draw_ag(ag, start_from_zero=False):
     task_length = 1.2 * max([task_label_height_max, task_label_width_max])
     proc_label_width_max = max([proc_label.width for proc_label in proc_labels])
     proc_label_height_max = max([proc_label.height for proc_label in proc_labels])
-    proc_radius = 0.8 * max([task_label_height_max, task_label_width_max])
+    proc_radius = 0.8 * max([proc_label_height_max, proc_label_width_max])
+
+    assert(max(ag.speeds) == 1.0)
+    proc_radius *= math.sqrt(max(ag.speeds)/min(ag.speeds))
 
     square = rect_to_sprite(task_length, task_length)
 
@@ -1122,11 +1297,12 @@ def draw_ag(ag, start_from_zero=False):
     circle = circle_to_sprite(proc_radius)
     bigger_height = max([square.height, circle.height])
 
-    total_width = max([circle.width * (ag.m) * 1.4, square.width * (ag.n) * 1.4])
+    total_width = max([circle.width * (ag.m) * 1.1, square.width * (ag.n) * 1.1])
     step_size_proc = float(total_width) / (ag.m)
     for j in range(ag.m):
-        circle = circle_to_sprite(proc_radius, fill_pattern=sources_dict[j])
-        inner_circle = circle_to_sprite(proc_radius * 0.6, fill_pattern=white_pattern, border=False)
+        this_radius = proc_radius * math.sqrt(ag.speeds[j])
+        circle = circle_to_sprite(this_radius, fill_pattern=sources_dict[j])
+        inner_circle = circle_to_sprite(this_radius * 0.6, fill_pattern=white_pattern, border=False)
         ag_graphic.draw_center(circle, step_size_proc * (j + 0.5), proc_radius)
         ag_graphic.draw_center(inner_circle, step_size_proc * (j + 0.5), proc_radius)
         ag_graphic.draw_center(proc_labels[j], step_size_proc * (j + 0.5), proc_radius)
@@ -1140,24 +1316,27 @@ def draw_ag(ag, start_from_zero=False):
         x1 = step_size_task * (task_id + 0.5)
         y1 = 2 * bigger_height
         x0 = step_size_proc * (proc_id + 0.5)
-        y0 = 2 * proc_radius
+        y0 = proc_radius*(1 + math.sqrt(ag.speeds[proc_id]))
 
         edge_sprite = path_to_sprite([(x1 - x0, y1 - y0)])
-        ag_graphic.draw_left_top(edge_sprite, x0, y0)
-        if (task_id, proc_id) in ag.links:
-            edge_arrow = path_to_sprite([(x1 - x0, y1 - y0)], line_width=1.0, ending_style=PathEndingStyle.BEGIN_ARROW)
-            ag_graphic.draw_left_top(edge_arrow, x0, y0)
+        ag_graphic.draw_center(edge_sprite, 0.5*(x0+x1), 0.5*(y0+y1))
+        if (task_id, proc_id, False) in ag.links:
+            edge_arrow = path_to_sprite([(x1 - x0, y1 - y0)], line_width=default_line_width*7, ending_style=PathEndingStyle.BEGIN_ARROW, line_pattern=transp_red_pattern)
+            ag_graphic.draw_center(edge_arrow, 0.5*(x0+x1), 0.5*(y0+y1))
+        if (task_id, proc_id, True) in ag.links:
+            edge_arrow = path_to_sprite([(x1 - x0, y1 - y0)], line_width=default_line_width*7, ending_style=PathEndingStyle.ENDING_ARROW, line_pattern=red_pattern)
+            ag_graphic.draw_center(edge_arrow, 0.5*(x0+x1), 0.5*(y0+y1))
         if (task_id, proc_id) in ag.np_assignments:
             edge_highlight_sprite = path_to_sprite([(x1 - x0, y1 - y0)], line_pattern=transp_pattern,
                                                    line_width=default_line_width * 10)
-            ag_graphic.draw_left_top(edge_highlight_sprite, x0, y0)
+            ag_graphic.draw_center(edge_highlight_sprite, 0.5*(x0+x1), 0.5*(y0+y1))
             edge_dash_sprite = path_to_sprite([(x1 - x0, y1 - y0)], line_pattern=black_pattern,
                                               line_width=default_line_width * 10, dash=True, offset=0.5)
-            ag_graphic.draw_left_top(edge_dash_sprite, x0, y0)
+            ag_graphic.draw_center(edge_dash_sprite, 0.5*(x0+x1), 0.5*(y0+y1))
         elif (task_id, proc_id) in ag.assignments:
             edge_highlight_sprite = path_to_sprite([(x1 - x0, y1 - y0)], line_pattern=transp_pattern,
                                                    line_width=default_line_width * 10)
-            ag_graphic.draw_left_top(edge_highlight_sprite, x0, y0)
+            ag_graphic.draw_center(edge_highlight_sprite, 0.5*(x0+x1), 0.5*(y0+y1))
 
     return ag_graphic
 
@@ -1170,18 +1349,20 @@ class Discont:
 # assume line contains multiple lines
 # holes are list of tuples (x,y,Discont type)
 # doesn't consider negative points
-def draw_line_graph(line_data, x_axis, y_axis, holes=[], scale_x=10.0, scale_y=10.0):
+def draw_line_graph(line_data, x_axis = None, y_axis = None, holes=[], scale_x=10.0, scale_y=10.0, xmax = 0, ymax = 0, colors = None, ystep = 5, xstep = 5, stroke = default_line_width):
     line_graphic = CompositeGraphic()
 
     x_offset = 5
     y_offset = 5
-    extra_line = 5
+    extra_line = 10
     hole_size = 1
 
-    x_axis_sprite = latex_to_sprite(x_axis, is_math=False)
-    y_axis_sprite = latex_to_sprite(y_axis, is_math=False)
+    if colors is None or len(colors) != len(line_data):
+        colors = [black_pattern for line in line_data]
 
-    xmax = ymax = 0
+    
+    
+
     for line in line_data:
         for (x, y) in line:
             # xmin = min([xmin, x])
@@ -1189,8 +1370,8 @@ def draw_line_graph(line_data, x_axis, y_axis, holes=[], scale_x=10.0, scale_y=1
             # ymin = min([ymin, y])
             ymax = max([ymax, y])
 
-    xlabels = [latex_to_sprite(str(t)) for t in range(0, xmax + 1, 5)]
-    ylabels = [latex_to_sprite(str(t)) for t in range(0, ymax + 1, 5)]
+    xlabels = [latex_to_sprite(str(t)) for t in range(0, xmax + 1, xstep)]
+    ylabels = [latex_to_sprite(str(t)) for t in range(0, ymax + 1, ystep)]
 
     xlabelHeight = max([label.height for label in xlabels])
     ylabelWidth = max([label.width for label in ylabels])
@@ -1212,26 +1393,29 @@ def draw_line_graph(line_data, x_axis, y_axis, holes=[], scale_x=10.0, scale_y=1
                                         y_offset + ymax * scale_y + extra_line)
     for t in range(ymax + 1):
         line_graphic.draw_left_middle(horiz_arrow, ylabelWidth, extra_line + (ymax - t) * scale_y)
-    for t in range(0, xmax + 1, 5):
+    for t in range(0, xmax + 1, xstep):
         tick_sprite = latex_to_sprite(str(t))
         line_graphic.draw_center_top(tick_sprite, ylabelWidth + x_offset + t * scale_x,
                                      y_offset + ymax * scale_y + extra_line)
         x_axis_tick_height = max([x_axis_tick_height, tick_sprite.height])
-    for t in range(0, ymax + 1, 5):
+    for t in range(0, ymax + 1, ystep):
         line_graphic.draw_right_middle(latex_to_sprite(str(t)), ylabelWidth, extra_line + (ymax - t) * scale_y)
 
-    line_graphic.draw_center_top(x_axis_sprite, ylabelWidth + x_offset + xmax * scale_x / 2,
-                                 y_offset + ymax * scale_y + extra_line + x_axis_tick_height)
+    if x_axis is not None:
+        x_axis_sprite = latex_to_sprite(x_axis, is_math=False)
+        line_graphic.draw_center_top(x_axis_sprite, ylabelWidth + x_offset + xmax * scale_x / 2,
+                                     y_offset + ymax * scale_y + extra_line + x_axis_tick_height)
 
     # we're assuming that lines are ordered by x here
-    for line in line_data:
+    for line, color in zip(line_data, colors):
         (x0, y0) = line[0]
+        smallest_y = min([y for _, y in line])
         converted_line = [((x - x0) * scale_x, (y - y0) * scale_y) for (x, y) in line]
         flipped_line = [(x, -y) for (x, y) in converted_line]
         flipped_line = flipped_line[1:]
-        line_path = path_to_sprite(flipped_line)
+        line_path = path_to_sprite(flipped_line, line_pattern=color, line_width=stroke)
         line_graphic.draw_left_bottom(line_path, ylabelWidth + x_offset + x0 * scale_x,
-                                      (ymax - y0) * scale_y + extra_line)
+                                      (ymax - smallest_y) * scale_y + extra_line)
 
     for (x, y, holetype) in holes:
         if holetype is Discont.OPEN:
@@ -1240,12 +1424,20 @@ def draw_line_graph(line_data, x_axis, y_axis, holes=[], scale_x=10.0, scale_y=1
         if holetype is Discont.CLOSED:
             line_graphic.draw_center(circle_to_sprite(hole_size, fill_pattern=black_pattern),
                                      ylabelWidth + x_offset + x * scale_x, extra_line + (ymax - y) * scale_y)
+    
+    line_graphic2 = line_graphic
 
-    line_graphic2 = CompositeGraphic()
-    line_graphic2.draw_left_middle(y_axis_sprite, 0, y_offset + ymax * scale_y / 2 + extra_line)
-    line_graphic2.draw_left_top(line_graphic, y_axis_sprite.width, 0)
+    if y_axis is not None:
+        line_graphic2 = CompositeGraphic()
+        y_axis_sprite = latex_to_sprite(y_axis, is_math=False)
+        line_graphic2.draw_left_middle(y_axis_sprite, 0, y_offset + ymax * scale_y / 2 + extra_line)
+        line_graphic2.draw_left_top(line_graphic, y_axis_sprite.width, 0)
 
     return line_graphic2
+
+def png_to_sprite(fname: str):
+    surface = cairo.ImageSurface.create_from_png(fname)
+    return Sprite(surface.get_height(), surface.get_width(), surface)
 
 
 def cairo_test():
@@ -1264,7 +1456,7 @@ def cairo_test():
 
 
 #sources_dict = dict([(0, white_pattern), (1, gray_pattern), (2, dark_gray_pattern), (3, black_pattern)])
-sources_dict = dict([(0, red_pattern), (1, blue_pattern), (2, orange_pattern), (3, purple_pattern)])
+sources_dict = dict([(0, red_pattern), (1, blue_pattern), (2, orange_pattern), (3, purple_pattern), (4, green_diag_pattern), (5, black_pattern)])
 
 def rotate_sprite(sprite: Sprite) -> Sprite:
     surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
@@ -1274,8 +1466,45 @@ def rotate_sprite(sprite: Sprite) -> Sprite:
     ctx.paint()
     return Sprite(sprite.width, sprite.height, surf)
 
+
+def scale_to_fit(draw: Drawable, width: float, height:float, scale:List = None) -> Sprite:
+    width_factor = width/draw.width
+    height_factor = height/draw.height
+    factor = min([width_factor, height_factor])
+
+    surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+    ctx = cairo.Context(surf)
+    ctx.save()
+    ctx.scale(factor, factor)
+    draw.update_published_surface()
+    draw.draw_published(ctx, 0, 0)
+    ctx.restore()
+    if scale is not None:
+        scale[0] = factor
+    return Sprite(draw.height*factor, draw.width*factor, surf)
+
+
+def transparency(draw:Drawable, alpha: float) -> Sprite:
+    surf = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+    ctx = cairo.Context(surf)
+    draw.update_published_surface()
+    draw.draw_published(ctx, 0, 0, alpha=alpha)
+    return Sprite(draw.height, draw.width, surf)
+
+def pad(draw:Drawable, up: int = 0, down: int = 0, left: int = 0, right: int = 0) -> CompositeGraphic:
+    cg = CompositeGraphic()
+    cg.draw_left_top(draw, left, up)
+    cg.height = draw.height + up + down
+    cg.width = draw.width + left + right
+    return cg
+
+
 def init():
+    #phi1 = latex_to_sprite(r"Ideal", is_math=False)
+    #print(get_pdf_page_size(tmp_dir + 'tmp.pdf'))
     return 0
+
+
 
 
 init()
