@@ -158,9 +158,23 @@ Render a given SchedData
 INPUT
     schedule - SchedData object
     start_from_zero - do task/proc subscripts start from 0 or 1
+    task_padding - target 4 + 3*number of chars, can't use len cuz \texttt counts toward strlen
 """
-def draw_sched_help(schedule: SchedData, start_from_zero: bool =False, task_identifiers=None, time_axis_inc:float=5, sched_start_time:int=0, draw_time:bool=True, draw_time_txt:bool=True, filename:str=None, scale_time:float=1.0):
-    height = schedule.n + (1 if schedule.budg_max > 0 else 0)
+def draw_sched_help(schedule: SchedData, 
+                    start_from_zero: bool =False, 
+                    task_identifiers:List[str]=None, 
+                    task_padding: List[float]=None,
+                    time_axis_inc:float=5, 
+                    sched_start_time:int=0, 
+                    draw_time:bool=True,
+                    draw_time_labels:Dict[int,List[Tuple[float,str]]]=None,
+                    time_discont:Dict[int,List[Tuple[float,float]]]=None, 
+                    draw_time_txt:bool=True, 
+                    draw_time_txt_label:List[str]=None, 
+                    filename:str=None, 
+                    scale_time:float=1.0) -> None:
+    annot_height = (1 if len(schedule.annotations[-1]) else 0) + sum([0] + [1 for i in range(schedule.n) if len(schedule.annotations[i])])
+    height = schedule.n + (1 if schedule.budg_max > 0 else 0) + annot_height
     width = (schedule.sched_end - sched_start_time)/4*scale_time
     fig:Figure = plt.figure(figsize=(width,height))
     spidx: int = 0
@@ -168,27 +182,36 @@ def draw_sched_help(schedule: SchedData, start_from_zero: bool =False, task_iden
     budg_ax: Axes = None
     annot_ax: Axes = None
     first_axs: Axes = None
+    sharex: bool = draw_time and (draw_time_labels is None)
     tot_axs = schedule.n + (1 if len(schedule.annotations[-1]) > 0 else 0) + (1 if schedule.budg_max > 0 else 0)
     y_height = 1.5
     for i in range(schedule.n):
         if len(schedule.annotations[i]) > 0:
             y_height = 3.0
-    if len(schedule.annotations[-1]) > 0:
-        spidx += 1
-        if first_axs is None:
-            annot_ax = fig.add_subplot(tot_axs, 1, spidx)
-            first_axs = annot_ax
-        else:
-            annot_ax = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
-        annot_ax.set_ylim([0, y_height])
-        annot_ax.axis('off')
+    #if len(schedule.annotations[-1]) > 0:
+    #    spidx += 1
+    #    if first_axs is None:
+    #        annot_ax = fig.add_subplot(tot_axs, 1, spidx)
+    #        first_axs = annot_ax
+    #    else:
+    #        if sharex:
+    #            annot_ax = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+    #        else:
+    #            annot_ax = fig.add_subplot(tot_axs, 1, spidx)
+    #    annot_ax.set_ylim([0, y_height])
+    #    annot_ax.set_xlim([sched_start_time, schedule.sched_end])
+    #    annot_ax.set_xticks([])
+    #    annot_ax.axis('off')
     if schedule.budg_max > 0:
         spidx +=1
         if first_axs is None:
             budg_ax = fig.add_subplot(tot_axs,1,spidx)
             first_axs = budg_ax
         else:
-            budg_ax = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+            if sharex:
+                budg_ax = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+            else:
+                budg_ax = fig.add_subplot(tot_axs, 1, spidx)
         budg_ax.set_ylabel('$q_1$', rotation=0, labelpad=10)
         budg_ax.set_ylim([0, schedule.budg_max*1.5])
         budg_ax.set_yticks([0, schedule.budg_max])
@@ -200,7 +223,10 @@ def draw_sched_help(schedule: SchedData, start_from_zero: bool =False, task_iden
             axs[i] = fig.add_subplot(tot_axs, 1, spidx)
             first_axs = axs[i]
         else:
-            axs[i] = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+            if sharex:
+                axs[i] = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+            else:
+                axs[i] = fig.add_subplot(tot_axs, 1, spidx)
         axs[i].set_yticks([])
         axs[i].set_ylim([0, y_height])
         axs[i].grid()
@@ -212,11 +238,16 @@ def draw_sched_help(schedule: SchedData, start_from_zero: bool =False, task_iden
         task_labels = ['$\\tau_' + str(i if start_from_zero else i + 1) + '$' for i in range(schedule.n)]
     else:
         task_labels = task_identifiers
+    if task_padding is None:
+        task_padding = [10 for i in range(schedule.n)]
+    else:
+        #heuristic is 4 + 3*num_chars for padding. Can't use len cuz \texttt counts toward strlen
+        assert(len(task_padding) == schedule.n)
 
     # draw per task items
     for i in range(schedule.n):
         # draw the task label
-        axs[i].set_ylabel(task_labels[i], rotation=0, labelpad=10)
+        axs[i].set_ylabel(task_labels[i], rotation=0, labelpad=task_padding[i])
         
         # draw each block of execution for this task
         for (proc, start_time, end_time, speed) in join_intervals(schedule.executions[i]):
@@ -257,11 +288,19 @@ def draw_sched_help(schedule: SchedData, start_from_zero: bool =False, task_iden
             axs[i].text((start+end)/2, 1.5 + 0.3, annot, ha='center', va='bottom')
             if (start != end):
                 axs[i].add_patch(FancyArrowPatch([start, 1.5 + 0.2], [end, 1.5 + 0.2], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle='<->'))
-    
+            else:
+                axs[i].plot([start, start], [0, 1.5+0.2], color='k', linestyle='dotted')
+
+        if time_discont is not None and i in time_discont.keys():
+            disconts = time_discont[i]
+            for start, end in disconts:
+                axs[i].plot([start, end], [0, 0], color='white', clip_on=False, zorder=6)
+                axs[i].plot([start, end], [y_height, y_height], color='white', clip_on=False, zorder=6)
+
     for (annot, start, end) in schedule.annotations[-1]:
-        annot_ax.text((start + end)/2, 0.3, annot, ha='center', va='bottom')
+        first_axs.text((start + end)/2, y_height + 0.8, annot, ha='center', va='bottom', clip_on=False)
         if (start != end):
-            annot_ax.add_patch(FancyArrowPatch([start, 0.2], [end, 0.2], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle='<->'))
+            first_axs.add_patch(FancyArrowPatch([start, y_height+0.6], [end, y_height+0.6], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle='<->', clip_on=False))
 
     if schedule.budg_max > 0:
         for (start, end, init, final) in schedule.budgets:
@@ -269,12 +308,27 @@ def draw_sched_help(schedule: SchedData, start_from_zero: bool =False, task_iden
 
     # label the time axis
     if draw_time:
-        axs[0].set_xticks(np.arange(sched_start_time, schedule.sched_end, time_axis_inc))
+        def_ticks = np.arange(sched_start_time, schedule.sched_end, time_axis_inc)
+        if draw_time_labels is not None:
+            for i in range(schedule.n):
+                if i in draw_time_labels.keys():
+                    ticks = [tick for tick,_ in draw_time_labels[i]]
+                    labels = [label for _,label in draw_time_labels[i]]
+                    axs[i].set_xticks(ticks=ticks, labels=labels)
+                else:
+                    axs[i].set_xticks(def_ticks)
+        else:
+            axs[0].set_xticks(def_ticks)
     else:
         axs[0].set_xticks([])
 
     if draw_time_txt:
-        axs[i].set_xlabel('Time')
+        if draw_time_txt_label is not None:
+            for i in range(schedule.n):
+                if len(draw_time_txt_label[i]):
+                    axs[i].set_xlabel(draw_time_txt_label[i])
+        else:
+            axs[schedule.n-1].set_xlabel('Time')
     
     plt.tight_layout()
 
