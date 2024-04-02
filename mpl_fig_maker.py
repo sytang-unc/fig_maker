@@ -31,8 +31,6 @@ class SchedData:
         self.releases = {}
         self.completions = {}
         self.deadlines = {}
-        self.pseudo_deadlines = {}
-        self.pseudo_releases = {}
 
         self.annotations = {}
 
@@ -48,14 +46,13 @@ class SchedData:
 
         self.sched_end = sched_end_min
         self.s_max = s_max
+        
         for i in range(self.n):
             self.executions[i] = []
             self.np_executions[i] = []
             self.releases[i] = []
-            self.pseudo_releases[i] = []
             self.completions[i] = []
             self.deadlines[i] = []
-            self.pseudo_deadlines[i] = []
             self.annotations[i] = []
             self.budgets[i] = []
             self.b_annotations[i] = []
@@ -82,12 +79,6 @@ class SchedData:
 
         self.sched_end = max([self.sched_end, t])
 
-    def add_pseudo_release(self, task_id, t):
-        assert (task_id < self.n)
-        self.pseudo_releases[task_id].append(t)
-
-        self.sched_end = max([self.sched_end, t])
-
     def add_completion(self, task_id, t):
         assert (task_id < self.n)
         self.completions[task_id].append(t)
@@ -97,12 +88,6 @@ class SchedData:
     def add_deadline(self, task_id, t):
         assert (task_id < self.n)
         self.deadlines[task_id].append(t)
-
-        self.sched_end = max([self.sched_end, t])
-
-    def add_pseudo_deadline(self, task_id, t):
-        assert (task_id < self.n)
-        self.pseudo_deadlines[task_id].append(t)
 
         self.sched_end = max([self.sched_end, t])
     
@@ -172,6 +157,9 @@ def draw_circ(ax: Axes, center:float, radius:float, colidx:int) -> None:
     elif colidx == 2:
         ax.add_patch(Circle(center,radius, facecolor='orange', hatch='--', edgecolor='k'))
 
+def task_padding(num_chars:int) -> int:
+    return 4 + 3*num_chars
+
 """
 Render a given SchedData
 INPUT
@@ -185,7 +173,8 @@ def draw_sched_help(schedule: SchedData,
                     budg_identifiers:Dict[int,str]=None,
                     budg_padding:Dict[int,float]=None,
                     task_padding: List[float]=None,
-                    time_axis_inc:float=5, 
+                    time_axis_inc:float=5,
+                    time_axis_minor:float=2,
                     sched_start_time:int=0, 
                     draw_time:bool=True,
                     draw_time_labels:Dict[int,List[Tuple[float,str]]]=None,
@@ -196,17 +185,22 @@ def draw_sched_help(schedule: SchedData,
                     scale_time:float=1.0,
                     visible:List[bool]=None,
                     mscale:float=7.0,
-                    force_annot_height:bool=False) -> None:
+                    draw_speed_tick:bool=False) -> None:
     if visible is None:
         visible = [True for _ in range(schedule.n)]
     while len(visible) < schedule.n:
         visible.append(True)
 
-    tot_budg = sum([0] + [1 for i in range(schedule.n) if len(schedule.budgets[i])])
-    annot_height = (1 if len(schedule.annotations[-1]) else 0) + sum([0] + [1 for i in range(schedule.n) if len(schedule.annotations[i]) and visible[i]])
-    height = sum([1 for i in range(schedule.n) if visible[i]]) + tot_budg + annot_height
-    if tot_budg or annot_height:
-        height *= 1.4
+    #don't need to scale by speed because want different speeds of tasks to be comparable
+    y_height = 1.5
+    y_height_annot = 2.0
+
+    tot_budg = sum([0] + [y_height for i in range(schedule.n) if len(schedule.budgets[i])])
+    annot_height = ((y_height_annot - y_height) if len(schedule.annotations[-1]) else 0)\
+                    + sum([0] + [(y_height_annot - y_height) for i in range(schedule.n) if len(schedule.annotations[i]) and visible[i]])\
+                    + sum([0] + [(y_height_annot - y_height) for i in range(schedule.n) if len(schedule.b_annotations[i])])
+    height = sum([y_height for i in range(schedule.n) if visible[i]]) + tot_budg + annot_height
+    height /= 1.5
     width = (schedule.sched_end - sched_start_time)/4*scale_time
     fig:Figure = plt.figure(figsize=(width,height))
     spidx: int = 0
@@ -216,30 +210,34 @@ def draw_sched_help(schedule: SchedData,
     first_axs: Axes = None
     last_axs: Axes = None
     sharex: bool = draw_time and (draw_time_labels is None)
-    tot_axs = schedule.n + (1 if len(schedule.annotations[-1]) > 0 else 0) + tot_budg
 
-    has_annot: bool = force_annot_height or any([len(schedule.annotations[i]) for i in range(schedule.n)])
-    has_budg_annot:bool = any([len(schedule.b_annotations[i]) and len(schedule.budgets[i]) for i in range(schedule.n)])
+    budg_heights:List[float] = [(y_height_annot if len(schedule.b_annotations[i]) else y_height)*schedule.budg_maxs[i] for i in range(schedule.n)]
 
-    #don't need to scale by speed because want different speeds of tasks to be comparable
-    y_height = 1.5
-    if has_annot:
-        y_height = 3.0
-    #need to scale by budg_maxs because dont need budget of different tasks to be comparable
-    budg_height_scale = 3.0 if has_budg_annot else 1.5
-    budg_heights:List[float] = [budg_height_scale*schedule.budg_maxs[i] for i in range(schedule.n)]
+    height_ratios:List[float] = []
+    for i in range(schedule.n):
+        if len(schedule.budgets[i]):
+            if len(schedule.b_annotations[i]):
+                height_ratios.append(y_height_annot)
+            else:
+                height_ratios.append(y_height)
+        if visible[i]:
+            if len(schedule.annotations[i]):
+                height_ratios.append(y_height_annot)
+            else:
+                height_ratios.append(y_height)
+    gs = fig.add_gridspec(len(height_ratios), 1, height_ratios=height_ratios)
 
     for i in range(schedule.n):
         if len(schedule.budgets[i]):
-            spidx += 1
             if first_axs is None:
-                budg_ax[i] = fig.add_subplot(tot_axs, 1, spidx)
+                budg_ax[i] = fig.add_subplot(gs[spidx])
                 first_axs = budg_ax[i]
             else:
                 if sharex:
-                    budg_ax[i] = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+                    budg_ax[i] = fig.add_subplot(gs[spidx], sharex=first_axs)
                 else:
-                    budg_ax[i] = fig.add_subplot(tot_axs, 1, spidx)
+                    budg_ax[i] = fig.add_subplot(gs[spidx])
+            spidx += 1
             budg_ax[i].set_ylim([0, budg_heights[i]])
             budg_ax[i].set_yticks([0, schedule.budg_maxs[i]])
             budg_ax[i].set_xlim([sched_start_time, schedule.sched_end])
@@ -247,19 +245,22 @@ def draw_sched_help(schedule: SchedData,
         if not visible[i]:
             axs[i] = None
             continue
-        spidx += 1
         #axs[i] = fig.add_subplot(str(tot_axs) + '1' + str(spidx), sharex=True)
         if first_axs is None:
-            axs[i] = fig.add_subplot(tot_axs, 1, spidx)
+            axs[i] = fig.add_subplot(gs[spidx])
             first_axs = axs[i]
         else:
             if sharex:
-                axs[i] = fig.add_subplot(tot_axs, 1, spidx, sharex=first_axs)
+                axs[i] = fig.add_subplot(gs[spidx], sharex=first_axs)
             else:
-                axs[i] = fig.add_subplot(tot_axs, 1, spidx)
-        axs[i].set_yticks([])
-        axs[i].set_ylim([0, y_height])
-        axs[i].grid()
+                axs[i] = fig.add_subplot(gs[spidx])
+        spidx += 1
+        if draw_speed_tick:
+            axs[i].set_yticks(ticks=[0,1], labels=['0','{sp:.1f}'.format(sp=schedule.s_max)])
+        else:
+            axs[i].set_yticks([])
+        axs[i].set_ylim([0, y_height_annot if len(schedule.annotations[i]) else y_height])
+        axs[i].grid(which='both', axis='x')
         axs[i].set_xlim([sched_start_time, schedule.sched_end])
         last_axs = axs[i]
 
@@ -301,7 +302,7 @@ def draw_sched_help(schedule: SchedData,
                 if fill:
                     budg_ax[i].fill([start, end, end, start], [0, 0, final, init], color='aquamarine')
                 else:
-                    budg_ax[i].plot([start, end], [init, final], color='aquamarine', linestyle='dotted')
+                    budg_ax[i].plot([start, end], [init, final], color='aquamarine', linestyle='dotted', linewidth=3.0)
             
             for (annot, start, end, astyle) in schedule.b_annotations[i]:
                 annot_x = start
@@ -313,10 +314,10 @@ def draw_sched_help(schedule: SchedData,
                         annot_x = (start + end)/2
                     else:
                         assert(False)
-                    budg_ax[i].add_patch(FancyArrowPatch([start, (1.5 + 0.2)*schedule.budg_maxs[i]], [end, (1.5 + 0.2)*schedule.budg_maxs[i]], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle=astyle))
+                    budg_ax[i].add_patch(FancyArrowPatch([start, (1.2)*schedule.budg_maxs[i]], [end, (1.2)*schedule.budg_maxs[i]], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle=astyle))
                 else:
-                    budg_ax[i].plot([start, start], [0, (1.5+0.2)*schedule.budg_maxs[i]], color='k', linestyle='dotted')
-                budg_ax[i].text(annot_x, (1.5 + 0.3)*schedule.budg_maxs[i], annot, ha='center', va='bottom')
+                    budg_ax[i].plot([start, start], [0, (1.2)*schedule.budg_maxs[i]], color='k', linestyle='dotted')
+                budg_ax[i].text(annot_x, (1.3)*schedule.budg_maxs[i], annot, ha='center', va='bottom')
 
         if axs[i] is None:
             continue
@@ -335,33 +336,25 @@ def draw_sched_help(schedule: SchedData,
         # draw releases/completions
         #arrwidth = 0.1
         for t in schedule.releases[i]:
-            if t in schedule.pseudo_deadlines[i] or t in schedule.deadlines[i]:
-                axs[i].add_patch(FancyArrowPatch([t, 0], [t, 1.2], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale))
+            if t in schedule.deadlines[i]:
+                axs[i].add_patch(FancyArrowPatch([t, 0], [t, 1.2], color='k', arrowstyle='<|-|>', shrinkA=0, shrinkB=0, mutation_scale=mscale))
             else:
-                axs[i].add_patch(FancyArrowPatch([t, 0], [t, 1.2], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale))
-        for t in schedule.pseudo_releases[i]:
-            if t in schedule.pseudo_deadlines[i] or t in schedule.deadlines[i]:
-                axs[i].add_patch(FancyArrowPatch([t, 0], [t, 1.2], color='gray', shrinkA=0, shrinkB=0, mutation_scale=mscale))
-            else:
-                axs[i].add_patch(FancyArrowPatch([t, 0], [t, 1.2], color='gray', shrinkA=0, shrinkB=0, mutation_scale=mscale))
+                axs[i].add_patch(FancyArrowPatch([t, 0], [t, 1.2], color='k', arrowstyle='-|>', shrinkA=0, shrinkB=0, mutation_scale=mscale))
         for t in schedule.completions[i]:
             axs[i].add_patch(FancyArrowPatch([t,0],[t, 1.2], color='k', arrowstyle='-[', shrinkA=0, shrinkB=0, mutation_scale=5))
         for t in schedule.deadlines[i]:
-            if t in schedule.releases[i] or t in schedule.pseudo_releases[i]:
-                axs[i].add_patch(FancyArrowPatch([t,1.2],[t, 0], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale))
+            if t in schedule.releases[i]:
+                pass#taken care of when drawing releases
+                #axs[i].add_patch(FancyArrowPatch([t,1.2],[t, 0], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale))
             else:
-                axs[i].add_patch(FancyArrowPatch([t,1.2],[t, 0], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale))
-        for t in schedule.pseudo_deadlines[i]:
-            if t in schedule.releases[i] or t in schedule.pseudo_releases[i]:
-                axs[i].add_patch(FancyArrowPatch([t,1.2],[t, 0],color='gray', shrinkA=0, shrinkB=0, mutation_scale=mscale))
-            else:
-                axs[i].add_patch(FancyArrowPatch([t,1.2],[t, 0],color='gray', shrinkA=0, shrinkB=0, mutation_scale=mscale))
+                axs[i].add_patch(FancyArrowPatch([t,1.2],[t, 0], color='k', arrowstyle='-|>', shrinkA=0, shrinkB=0, mutation_scale=mscale))
 
         if time_discont is not None and i in time_discont.keys():
             disconts = time_discont[i]
+            disc_height = y_height_annot if len(schedule.annotations[i]) else y_height
             for start, end in disconts:
                 axs[i].plot([start, end], [0, 0], color='white', clip_on=False, zorder=6)
-                axs[i].plot([start, end], [y_height, y_height], color='white', clip_on=False, zorder=6)
+                axs[i].plot([start, end], [disc_height, disc_height], color='white', clip_on=False, zorder=6)
 
         # draw annotations
         for (annot, start, end, astyle) in schedule.annotations[i]:
@@ -374,10 +367,10 @@ def draw_sched_help(schedule: SchedData,
                     annot_x = (start + end)/2
                 else:
                     assert(False)
-                axs[i].add_patch(FancyArrowPatch([start, 1.5 + 0.2], [end, 1.5 + 0.2], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle=astyle))
+                axs[i].add_patch(FancyArrowPatch([start, 1.3], [end, 1.3], color='k', shrinkA=0, shrinkB=0, mutation_scale=mscale, arrowstyle=astyle))
             else:
-                axs[i].plot([start, start], [0, 1.5+0.2], color='k', linestyle='dotted')
-            axs[i].text(annot_x, 1.5 + 0.3, annot, ha='center', va='bottom')
+                axs[i].plot([start, start], [0, 1.3], color='k', linestyle='dotted')
+            axs[i].text(annot_x, 1.4, annot, ha='center', va='bottom')
 
     for (annot, start, end, astyle) in schedule.annotations[-1]:
         annot_x:float = start
@@ -393,7 +386,8 @@ def draw_sched_help(schedule: SchedData,
         
     # label the time axis
     if draw_time:
-        def_ticks = np.arange(sched_start_time, schedule.sched_end, time_axis_inc)
+        def_ticks = np.arange(sched_start_time, schedule.sched_end + 0.1, time_axis_inc)
+        def_minor_ticks = np.arange(sched_start_time, schedule.sched_end + 0.1, time_axis_minor)
         if draw_time_labels is not None:
             for i in range(schedule.n):
                 if axs[i] is None:
@@ -402,10 +396,16 @@ def draw_sched_help(schedule: SchedData,
                     ticks = [tick for tick,_ in draw_time_labels[i]]
                     labels = [label for _,label in draw_time_labels[i]]
                     axs[i].set_xticks(ticks=ticks, labels=labels)
+                    if time_axis_inc != time_axis_minor:
+                        axs[i].set_xticks(ticks=def_minor_ticks, minor=True)
                 else:
                     axs[i].set_xticks(def_ticks)
+                    if time_axis_inc != time_axis_minor:
+                        axs[i].set_xticks(ticks=def_minor_ticks, minor=True)
         else:
             first_axs.set_xticks(def_ticks)
+            if time_axis_inc != time_axis_minor:
+                first_axs.set_xticks(ticks=def_minor_ticks, minor=True)
     else:
         first_axs.set_xticks([])
 
@@ -461,7 +461,7 @@ class AffinityGraph:
             self.add_edge(task_id, j)
 
     def add_assign(self, task_id, proc_id):
-        assert ((task_id, proc_id) in self.edges)
+        #assert ((task_id, proc_id) in self.edges)
         self.assignments.append((task_id, proc_id))
 
     def add_np_assign(self, task_id, proc_id):
@@ -480,20 +480,38 @@ class AffinityGraph:
     def clear_link(self):
         self.links = []
 
-def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero=False):
-    object_height:float = 0.5
+def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False, pi_text:bool=True, draw_idle:bool=False) -> Drawable:
+    task_labels: List[TextGraphic] = []
+    i = 0 if start_from_zero else 1
+    n_lim = ag.n + i + (ag.m if draw_idle else 0)
+    while i < n_lim:
+        task_txt = r'Task~' + str(i)
+        if pi_text:
+            task_txt = '$\\tau_' + str(i) + '$'
+        task_labels.append(TextGraphic(task_txt))
+        i+=1
+
+    min_speed = min(ag.speeds)
+    assert(max(ag.speeds) == 1.0 and min_speed > 0)
+    object_height:float = max([txt.width for txt in task_labels] + [txt.height for txt in task_labels])
+
+    test_cpu = cpu(0, pi_text=pi_text)
+    if np.sqrt(max(ag.speeds)/min_speed)*test_cpu.height > object_height:
+        object_height = np.sqrt(max(ag.speeds)/min_speed)*test_cpu.height
+
+    out = CompositeGraphic()
 
     #each object gets OH and 0.1 of padding on either side, totals OH x n + 0.1 x (n+1)
     width: float = max([ag.n, ag.m])*(object_height + 0.1) + 0.1
     #tasks/procs/edges get 0.5 each, plus 0.1 padding on each side, totals OH x 3 + 0.1 x 2
-    height: float = 3*object_height + 0.2
-    fig = plt.figure(figsize = (width, height))
-    ax = fig.add_subplot()
-    ax.set_xlim([0, width])
-    ax.set_ylim([0, height])
-    ax.axis('off')
-
-    assert(max(ag.speeds) == 1.0)
+    #height: float = 3*object_height + 0.2
+    #fig = plt.figure(figsize = (width, height))
+    #fig = plt.figure()
+    #ax = fig.add_subplot()
+    #ax.set_xlim([0, width])
+    #ax.set_ylim([0, height])
+    #ax.axis('off')
+    #ax.axis('equal')
 
     for (task_id, proc_id) in ag.edges:
         x1 = task_id*width/ag.n + 0.5*width/ag.n
@@ -501,22 +519,44 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero=False):
         x0 = proc_id*width/ag.m + 0.5*width/ag.m
         y0 = 0.1 + 2*object_height
 
-        ax.plot([x0,x1],[y0,y1], color='k')
+        #ax.plot([x0,x1],[y0,y1], color='k')
+        out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)]))
         if (task_id, proc_id, False) in ag.links:
-            ax.quiver([x0, y0], [x1-x0, y1-y0], angles='xy', scale=1.0, scale_units='xy', color='k')
+            #ax.quiver([x0, y0], [x1-x0, y1-y0], angles='xy', scale=1.0, scale_units='xy', color='k')
+            out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], end_arrow=True))
         if (task_id, proc_id, True) in ag.links:
-            ax.quiver([x1, y1], [x0-x1, y0-y1], angles='xy', scale=1.0, scale_units='xy', color='k')
+            #ax.quiver([x1, y1], [x0-x1, y0-y1], angles='xy', scale=1.0, scale_units='xy', color='k')
+            out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], beg_arrow=True))
         if (task_id, proc_id) in ag.np_assignments:
-            ax.plot([x0,x1],[y0,y1], color='k', linewidth=5.0, linestyle='dashed')
-        elif (task_id, proc_id) in ag.assignments:
-            ax.plot([x0,x1],[y0,y1], color='k', linewidth=5.0, alpha=0.3)
+            #ax.plot([x0,x1],[y0,y1], color='k', linewidth=5.0, linestyle='dashed')
+            out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], linestyle='dashed', linewidth=5.0))
+    #There's one instance where we need to have an assignment despite no affinity in the dissertation, so we need to pull this one out of the above for loop
+    for (task_id, proc_id) in ag.assignments:
+        #ax.plot([x0,x1],[y0,y1], color='k', linewidth=5.0, alpha=0.3)
+        x1 = task_id*width/ag.n + 0.5*width/ag.n
+        y1 = 0.1 + object_height
+        x0 = proc_id*width/ag.m + 0.5*width/ag.m
+        y0 = 0.1 + 2*object_height
+        out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], alpha=0.3, linewidth=5.0))
 
     for j in range(ag.m):
         this_radius:float = object_height/2 * np.sqrt(ag.speeds[j])
-        center:Tuple[float,float] = (j*width/ag.m + 0.5*width/ag.m, 0.1 + object_height*2.5)
-        draw_circ(ax, center, this_radius, j)
-        ax.add_patch(Circle(center, 0.6*this_radius, facecolor='white'))
-        ax.text(center[0], center[1], '$\\pi_' + str(j if start_from_zero else j + 1) + '$', ha = 'center', va = 'center')
+        cpug = cpu(j, start_from_zero=start_from_zero, pi_text=pi_text, min_radius=this_radius)
+        center:Tuple[float,float] = (j*width/ag.m + 0.5*width/ag.m, 0.1 + object_height*2.5 - (object_height/2 - object_height/2 * np.sqrt(ag.speeds[j])))
+        out.draw_center(cpug, center[0], center[1])
+        #draw_circ(ax, center, this_radius, j)
+        #ax.add_patch(Circle(center, 0.6*this_radius, facecolor='white'))
+        #proc_txt = r'CPU~' + str(j if start_from_zero else j+1)
+        #if pi_text:
+        #    proc_txt = '$\\pi_' + str(j if start_from_zero else j + 1) + '$'
+        #ax.text(center[0], center[1], proc_txt, ha = 'center', va = 'center')
+        if draw_idle:
+            out.draw_left_bottom(PathGraphic([(center[0], 0.1 + 2*object_height + cpug.height), (center[0], 0.1 + 4*object_height)]))
+            if all([proc_id != j for _, proc_id in ag.assignments]):
+                out.draw_left_bottom(PathGraphic([(center[0], 0.1 + 2*object_height + cpug.height), (center[0], 0.1 + 4*object_height)], alpha=0.3, linewidth=5.0))
+            out.draw_center(RectGraphic(object_height, object_height), center[0], 0.1 + 4.5*object_height)
+            out.draw_center(task_labels[ag.n + j], center[0], 0.1 + 4.5*object_height)
+
 
     for i in range(ag.n):
         #center of box is at i*width/ag.n + 0.5*width/ag.n
@@ -524,15 +564,22 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero=False):
         center:Tuple[float,float] = (i*width/ag.n + 0.5*width/ag.n, 0.1 + object_height/2)
         cx:float = center[0]
         cy:float = center[1]
-        ax.fill([cx - object_height/2, cx + object_height/2, cx + object_height/2, cx - object_height/2],\
-                [cy - object_height/2, cy - object_height/2, cy + object_height/2, cy + object_height/2],\
-                    facecolor='white', edgecolor='k')
-        ax.text(cx, cy, '$\\tau_' + str(i if start_from_zero else i + 1) + '$', ha='center', va='center')
+        rectg = RectGraphic(object_height, object_height)
+        out.draw_center(rectg, cx, cy)
+        out.draw_center(task_labels[i], cx, cy)
+        #ax.fill([cx - object_height/2, cx + object_height/2, cx + object_height/2, cx - object_height/2],\
+        #        [cy - object_height/2, cy - object_height/2, cy + object_height/2, cy + object_height/2],\
+        #            facecolor='white', edgecolor='k')
+        #task_txt = r'Task~' + str(i if start_from_zero else i + 1)
+        #if pi_text:
+        #    task_txt = '$\\tau_' + str(i if start_from_zero else i + 1) + '$'
+        #ax.text(cx, cy, task_txt, ha='center', va='center')
 
-    if filename is None:
-        plt.show()
-    else:
-        plt.savefig(filename, bbox_inches='tight')
+    if filename is not None:
+        #plt.savefig(filename, bbox_inches='tight')
+        publish(out, filename=filename)
+    
+    return out
 
 
 """
@@ -599,7 +646,7 @@ class CircGraphic(Drawable):
             ax.add_patch(Circle((x + self.width/2,y + self.height/2), self.width/2, edgecolor=self.edgecolor, facecolor=self.facecolor, hatch=self.hatch, zorder=3))
 
 class PathGraphic(Drawable):
-    def __init__(self, path:List[Tuple[float,float]], edgecolor='k', beg_arrow=False, end_arrow=False, close=False):
+    def __init__(self, path:List[Tuple[float,float]], edgecolor='k', beg_arrow=False, end_arrow=False, close=False, linewidth=1.0, linestyle='solid', alpha=1.0):
         assert(len(path) > 1)
 
         min_x, max_x, min_y, max_y = 0, 0, 0, 0
@@ -616,6 +663,9 @@ class PathGraphic(Drawable):
         self.end_arrow = end_arrow
         self.path = path
         self.close = close
+        self.linewidth = linewidth
+        self.linestyle = linestyle
+        self.alpha = alpha
         
         super().__init__(max_x - min_x, max_y - min_y, edgecolor=edgecolor)
     
@@ -630,13 +680,13 @@ class PathGraphic(Drawable):
             path[i] = (x + path[i][0], y + path[i][1])
         pltpath = Path(path, codes)
         if self.beg_arrow and self.end_arrow:
-            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='<->', color=self.edgecolor))
+            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='<->', color=self.edgecolor, mutation_scale=7, linewidth=self.linewidth, linestyle=self.linestyle, alpha=self.alpha))
         elif self.beg_arrow:
-            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='<-', color=self.edgecolor))
+            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='<-', color=self.edgecolor, mutation_scale=7, linewidth=self.linewidth, linestyle=self.linestyle, alpha=self.alpha))
         elif self.end_arrow:
-            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='->', color=self.edgecolor, mutation_scale=7))
+            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='->', color=self.edgecolor, mutation_scale=7, linewidth=self.linewidth, linestyle=self.linestyle, alpha=self.alpha))
         else:
-            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='-', color=self.edgecolor))
+            ax.add_patch(FancyArrowPatch(path=pltpath, arrowstyle='-', color=self.edgecolor, linewidth=self.linewidth, linestyle=self.linestyle, alpha=self.alpha))
 
 class CompositeGraphic(Drawable):
     def __init__(self):
@@ -700,7 +750,7 @@ class CompositeGraphic(Drawable):
         self._add_element(draw_src, x - draw_src.width / 2, y)
 
 
-def textbox(text: str, width:float = 0, height:float = 0, edgecolor:str = 'k', txtcolor:str = 'k') -> CompositeGraphic:
+def textbox(text: str, width:float = 0, height:float = 0, edgecolor:str = 'k', txtcolor:str = 'k') -> Drawable:
     txtGrp = TextGraphic(text, color=txtcolor)
     rect = RectGraphic(max([width, 0.5 + txtGrp.width]), max([height, 0.5 + txtGrp.height]), edgecolor=edgecolor)
     #print("rect width:{rwidth},\trect height:{rheight}".format(rwidth=rect.width, rheight=rect.height))
@@ -710,12 +760,17 @@ def textbox(text: str, width:float = 0, height:float = 0, edgecolor:str = 'k', t
     ret.draw_center(txtGrp, rect.width/2, rect.height/2)
     return ret
 
-def cpu(cpunum:int, min_radius:float = 0) -> CompositeGraphic:
+def cpu(cpunum:int, start_from_zero:bool=True, pi_text:bool = False, min_radius:float = 0) -> Drawable:
     ret = CompositeGraphic()
     assert( 0 <= cpunum <= 7)
 
-    txt = TextGraphic(r'\texttt{cpu~' + str(cpunum) + r'}')
-    in_radius = txt.width/2*1.2
+    idx_str = str(cpunum + (0 if start_from_zero else 1))
+
+    txt_str = r'\texttt{cpu~' + idx_str + r'}'
+    if pi_text:
+        txt_str = '$\\pi_{' + idx_str + '}$'
+    txt = TextGraphic(txt_str)
+    in_radius = (max([txt.width, txt.height]) + 0.25)/2*1.2
     radius = max([min_radius, in_radius/0.7])
 
     if cpunum == 0:
@@ -747,9 +802,10 @@ def cpu(cpunum:int, min_radius:float = 0) -> CompositeGraphic:
         ret.draw_left_bottom(CircGraphic(radius, facecolor=facecolor, hatch=hatch), 0, 0)
     
     ret.draw_center(CircGraphic(in_radius), ret.width/2, ret.height/2)
-    ret.draw_center(txt, ret.width/2, ret.height/2)
+    #ret.draw_center(RectGraphic(txt.width, txt.height, zorder=3), radius, radius)
+    #text bounding box looks a little off with subscripts so we compensate when pi_text
+    ret.draw_center(txt, radius, radius + (0.1 if pi_text else 0))
     return ret
-
 
 #Consider reworking this all to work as properties
 class LiTask:
@@ -762,6 +818,7 @@ class LiTask:
     draw_state:bool = False
     draw_policy:bool = False
     draw_onrq:bool = False
+    draw_core_cookie:bool = False
     def __init__(self, 
                  pid:int=-1, 
                  cpu:int=-1, 
@@ -775,6 +832,7 @@ class LiTask:
                  cpusmask:List[int]=[],
                  state:str='TASK_RUNNING',
                  policy:str=r'SCHED\_DEADLINE',
+                 core_cookie:int=0,
                  force_queued:bool=False,
                  force_unqueued:bool=False) -> None:
         if pid == -1:
@@ -793,6 +851,7 @@ class LiTask:
         self.onrq = onrq
         self.state = state
         self.policy = policy
+        self.core_cookie = core_cookie
 
         self.force_queued = force_queued
         self.force_unqueued = force_unqueued
@@ -853,6 +912,8 @@ def draw_task(task:LiTask, task_width:float=0) -> Drawable:
         paramList.append(TextGraphic(r'\texttt{dl.deadline:~' + str(task.deadline) + '}', color=emph_col if 'deadline' in task.emphList else edge_col))
     if LiTask.draw_runtime:
         paramList.append(TextGraphic(r'\texttt{dl.runtime:~' + str(task.runtime) + '}', color=emph_col if 'runtime' in task.emphList else edge_col))
+    if LiTask.draw_core_cookie:
+        paramList.append(TextGraphic(r'\texttt{core_cookie:~' + str(task.core_cookie) + '}', color=emph_col if 'core_cookie' in task.emphList else edge_col))
     if LiTask.draw_policy:
         paramList.append(TextGraphic(r'\texttt{policy:~' + task.policy + '}', color=emph_col if 'policy' in task.emphList else edge_col))
     if LiTask.draw_cpusptr:
