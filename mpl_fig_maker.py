@@ -3,7 +3,10 @@ import copy #should be removed when updating to python >= 3.10
 
 from typing import Callable, Dict, List, Tuple
 import matplotlib
-matplotlib.use('pgf')
+#matplotlib.use('pgf')
+#plt.rcParams['pgf.rcfonts'] = False
+#plt.rcParams['pgf.texsystem'] = 'pdflatex'
+matplotlib.use('QtAgg')
 from matplotlib.axes import Axes
 from matplotlib.patches import Circle, FancyArrowPatch
 import matplotlib.pyplot as plt
@@ -14,12 +17,11 @@ from matplotlib.transforms import Bbox
 import numpy as np
 
 
-plt.rcParams["text.usetex"] = True
-plt.rcParams['font.family'] = 'serif'
-plt.rcParams['font.serif'] = ['Computer Modern']
-plt.rcParams['pgf.rcfonts'] = False
-plt.rcParams['pgf.texsystem'] = 'pdflatex'
-plt.rcParams['pgf.preamble'] = '\n'.join([
+#plt.rcParams["text.usetex"] = True
+#plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.size'] = 20
+#plt.rcParams['font.serif'] = ['Computer Modern']
+plt.rcParams['text.latex.preamble'] = '\n'.join([
     r'\usepackage{xspace}',
     r'\usepackage{comment}',
     r'\usepackage{xparse}',
@@ -460,6 +462,217 @@ def draw_sched_help(schedule: SchedData,
 
     _publish_helper(filename)
 
+def draw_rectg(width:int, height:int, colidx:int) -> Drawable:
+    assert( 0 <= colidx <= 2 )
+    if colidx == 0:
+        return RectGraphic(width, height, facecolor='red', edgecolor='k')
+    elif colidx == 1:
+        return RectGraphic(width, height, facecolor='blue', hatch='//', edgecolor='k')
+    elif colidx == 2:
+        return RectGraphic(width, height, facecolor='orange', hatch='--', edgecolor='k')
+
+def sched_drawable(schedule: SchedData, 
+                    start_from_zero: bool=True, 
+                    task_identifiers:List[str]=None, 
+                    time_axis_inc:float=2,
+                    time_axis_minor:float=1,
+                    sched_start_time:int=0, 
+                    draw_time:bool=True,
+                    draw_time_ticks:bool=True,
+                    time_tick_txt:List[str] = None,
+                    scale_time:float=2.0,
+                    cpugs: List[Drawable] = [],
+                    draw_until: float=-1) -> Drawable:
+    
+    out = CompositeGraphic()
+
+    draw_boxes = False
+
+    # create sprites for task labels
+    task_labels: List[Drawable] = []
+    if task_identifiers is None:
+        #task_labels = [TextGraphic(r'$\task[' + str(i if start_from_zero else i + 1) + ']$', box=draw_boxes) for i in range(schedule.n)]
+        task_labels = [TextGraphic(r'Task ' + str(i if start_from_zero else i + 1), box=draw_boxes) for i in range(schedule.n)]
+    else:
+        task_labels = [TextGraphic(task_id, box=draw_boxes) for task_id in task_identifiers]
+    task_width = max([task_label.width for task_label in task_labels])
+    task_width *= 1.5
+    task_height = max([task_label.height for task_label in task_labels] + [cpug.height for cpug in cpugs])
+
+    cpug_offset = max([cpug.width for cpug in cpugs]) if len(cpugs) else 0
+
+    x_ax_width = max([task_height, cpug_offset]) + (schedule.sched_end - sched_start_time)*scale_time
+    x_ax_width *= 1.1
+    y_off = 0
+
+    scale_time_f = lambda t: task_width + max([task_height, cpug_offset]) + (t - sched_start_time)*scale_time
+
+    # Draw word "Time"
+    if draw_time:
+        time_txtg = TextGraphic("Time", box=draw_boxes)
+        out.draw_center_bottom(time_txtg, scale_time_f((schedule.sched_end - sched_start_time)*0.5), y_off)
+        y_off += 1.5*time_txtg.height
+
+    # Draw time tick labels
+    if draw_time_ticks:
+        if time_tick_txt is None:
+            time_tick_txt = [str(tick_num) for tick_num in np.arange(sched_start_time, schedule.sched_end + 1, time_axis_inc)]
+        time_tick_labels = [TextGraphic(tick_txt, box=draw_boxes) for tick_txt in time_tick_txt]
+        ttidx = 0
+        for t in np.arange(sched_start_time, schedule.sched_end + 1, time_axis_inc):
+            out.draw_center_bottom(time_tick_labels[ttidx], scale_time_f(t), y_off)
+            ttidx += 1
+        y_off += 1.5*max(time_tick_label.height for time_tick_label in time_tick_labels)
+
+    y_time_tick_off = y_off
+
+    if draw_until == -1:
+        draw_until = schedule.sched_end
+
+    # draw per task items
+    for i in range(schedule.n-1, -1, -1):
+
+        y_off += task_height
+
+        # draw the task label
+        out.draw_center(task_labels[i], task_width/2, y_off + task_height)
+
+        # draw grey task horiz line
+        out.draw_left_bottom(PathGraphic([(0, 0), (x_ax_width, 0)], edgecolor='gray'), task_width, y_off)
+
+        # draw each block of execution for this task
+        for (proc, start_time, end_time, speed) in join_intervals(schedule.executions[i]):
+            if end_time > draw_until:
+                end_time = draw_until
+            height = 2*task_height*speed/schedule.s_max
+            if len(cpugs):
+                height = cpugs[proc].height
+            out.draw_left_bottom(
+                draw_rectg((end_time - start_time)*scale_time, height, proc),
+                scale_time_f(start_time),
+                y_off
+            )
+            if end_time == draw_until:
+                if len(cpugs):
+                    out.draw_center_bottom(cpugs[proc], scale_time_f(draw_until), y_off)
+                break
+
+        # draw releases/completions
+        #arrwidth = 0.1
+        for t in schedule.releases[i]:
+            if t > draw_until:
+                break
+            if t in schedule.deadlines[i]:
+                out.draw_left_bottom(
+                    PathGraphic(
+                        [(0,0), (0,3*task_height)],
+                        beg_arrow=True,
+                        end_arrow=True,
+                        linewidth=2
+                    ),
+                    scale_time_f(t),
+                    y_off
+                )
+            else:
+                out.draw_left_bottom(
+                    PathGraphic(
+                        [(0,0), (0,3*task_height)],
+                        end_arrow=True,
+                        linewidth=2
+                    ),
+                    scale_time_f(t),
+                    y_off
+                )
+        for t in schedule.completions[i]:
+            if t > draw_until:
+                break
+            out.draw_left_bottom(
+                PathGraphic(
+                    [(0,0), (0, 3*task_height), (-task_height, 3*task_height), (task_height, 3*task_height)],
+                    linewidth=2
+                ),
+                scale_time_f(t),
+                y_off
+            )
+        for t in schedule.deadlines[i]:
+            if t > draw_until:
+                break
+            if t in schedule.releases[i]:
+                pass#taken care of when drawing releases
+            else:
+                out.draw_left_bottom(
+                    PathGraphic(
+                        [(0,0), (0,3*task_height)],
+                        beg_arrow=True,
+                        linewidth=2
+                    ),
+                    scale_time_f(t),
+                    y_off
+                )
+
+        y_off += 4*task_height
+
+        # draw annotations
+        max_annot_height = 0
+        for (annot, start, end, astyle) in schedule.annotations[i]:
+            annot_height = 0.2
+            annot_x = start
+            beg_arrow = False
+            end_arrow = False
+            if (start != end):
+                annot_x:float
+                if astyle == '->':
+                    annot_x = start
+                    end_arrow = True
+                elif astyle == '<->':
+                    annot_x = (start + end)/2
+                    beg_arrow = True
+                    end_arrow = True
+                elif astyle == '<-':
+                    annot_x = end
+                    beg_arrow = True
+                else:
+                    assert(False)
+                out.draw_left_bottom(PathGraphic([(scale_time_f(start), 0), (scale_time_f(end), 0)], beg_arrow=beg_arrow, end_arrow=end_arrow), 0, y_off + annot_height/2)
+            
+            txtg = TextGraphic(annot)
+            out.draw_center_bottom(txtg, scale_time_f(annot_x), y_off + annot_height)
+            annot_height += txtg.height
+            if annot_height > max_annot_height:
+                max_annot_height = annot_height
+        
+        y_off += max_annot_height
+    
+    # Draw major axes
+    out.draw_left_bottom(PathGraphic([(0, y_off - y_time_tick_off), (0, 0), (x_ax_width, 0)], beg_arrow=True,end_arrow=True,linewidth=2), task_width, y_time_tick_off)
+
+    # Draw vert lines
+    assert(time_axis_inc % time_axis_minor == 0)
+    for t in np.arange(sched_start_time, schedule.sched_end + 1, time_axis_minor):
+        out.draw_left_bottom(PathGraphic([(0,0),(0,y_off - y_time_tick_off)], edgecolor='grey'), scale_time_f(t), y_time_tick_off)
+
+    for (annot, start, end, astyle) in schedule.annotations[-1]:
+        annot_height = 0.2
+        annot_x:float = start
+        if (start != end):
+            if astyle == '->':
+                annot_x = start
+                end_arrow = True
+            elif astyle == '<->':
+                annot_x = (start + end)/2
+                beg_arrow = True
+                end_arrow = True
+            elif astyle == '<-':
+                annot_x = end
+                beg_arrow = True
+            else:
+                assert(False)
+            out.draw_left_bottom(PathGraphic([(scale_time_f(start), 0), (scale_time_f(end), 0)], beg_arrow=beg_arrow, end_arrow=end_arrow), 0, y_off + annot_height/2)
+        txtg = TextGraphic(annot)
+        out.draw_center_bottom(txtg, scale_time_f(annot_x), y_off + annot_height)
+    
+    return out
+
 def arrow_helper(ax: plt.Axes, x:float, y:float, dx:float, dy:float, color:str=None, alpha:float = 1.0):
     if color is not None:
         return ax.quiver(x, y, dx, dy, angles = 'xy', scale = 1.0, scale_units = 'xy', alpha=alpha, color = color)
@@ -524,6 +737,8 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
             pi_text:bool=True, indirect_indices:bool=False,
             task_label_txts:List[str] = None, proc_label_txts:List[str] = None,
             indirect_size:bool=False, 
+            assign_width:float=5.0,
+            edge_height_scale:float=0.5,
             draw_idle:bool=False, minspeed:float=1e10,
             invisible_tasks:List[int] = [], invisible_procs:List[int] = []) -> Drawable:
     task_labels: List[TextGraphic] = []
@@ -531,7 +746,7 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
     n_lim = ag.n + i + (ag.m if draw_idle else 0)
     if task_label_txts is not None:
         for tlt in task_label_txts:
-            task_labels.append(TextGraphic(tlt))
+            task_labels.append(TextGraphic(tlt, zorder=4))
             i += 1
     while i < n_lim:
         task_txt = r'Task~' + str(i)
@@ -542,22 +757,27 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
             else:
                 task_txt += str(i)
             task_txt += ']$'
-        task_labels.append(TextGraphic(task_txt))
+        task_labels.append(TextGraphic(task_txt, zorder=4))
         i+=1
 
     max_speed = max([1.0] + ag.speeds)
     min_speed = min([minspeed] + ag.speeds)
     assert(min_speed > 0)
-    object_height:float = max([txt.width for txt in task_labels] + [txt.height for txt in task_labels])
+    task_dim:float = 1.5*max([txt.width for txt in task_labels] + [txt.height for txt in task_labels])
+    object_height:float = task_dim
 
-    test_cpu = cpu(0, pi_text=pi_text, indirect_indices=indirect_indices, indirect_size=indirect_size)
+    if proc_label_txts is not None:
+        test_str = proc_label_txts[0]
+    else:
+        test_str = None
+    test_cpu = cpu(0, pi_text=pi_text, txt_str=test_str, indirect_indices=indirect_indices, indirect_size=indirect_size)
     if np.sqrt(max_speed/min_speed)*test_cpu.height > object_height:
         object_height = np.sqrt(max_speed/min_speed)*test_cpu.height
 
     out = CompositeGraphic()
 
     #each object gets OH and 0.1 of padding on either side, totals OH x n + 0.1 x (n+1)
-    width: float = max([ag.n, ag.m])*(object_height + 0.1) + 0.1
+    width: float = max([ag.n, ag.m])*(object_height + 0.2) + 0.1
     #tasks/procs/edges get 0.5 each, plus 0.1 padding on each side, totals OH x 3 + 0.1 x 2
     #height: float = 3*object_height + 0.2
     #fig = plt.figure(figsize = (width, height))
@@ -568,13 +788,41 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
     #ax.axis('off')
     #ax.axis('equal')
 
+    y_off = 0.1
+
+    i2 = -1
+    for i in range(ag.n):
+        if i in invisible_tasks:
+            continue
+
+        i2 += 1
+        #center of box is at i*width/ag.n + 0.5*width/ag.n
+        #left of box is then that minus object_height/2, right is plus object_height/2
+        center:Tuple[float,float] = (i*width/ag.n + 0.5*width/ag.n, y_off + task_dim/2)
+        cx:float = center[0]
+        cy:float = center[1]
+        rectg = RectGraphic(task_dim, task_dim, zorder=3)
+        out.draw_center(rectg, cx, cy)
+        out.draw_center(task_labels[i2], cx, cy)
+        #ax.fill([cx - object_height/2, cx + object_height/2, cx + object_height/2, cx - object_height/2],\
+        #        [cy - object_height/2, cy - object_height/2, cy + object_height/2, cy + object_height/2],\
+        #            facecolor='white', edgecolor='k')
+        #task_txt = r'Task~' + str(i if start_from_zero else i + 1)
+        #if pi_text:
+        #    task_txt = '$\\tau_' + str(i if start_from_zero else i + 1) + '$'
+        #ax.text(cx, cy, task_txt, ha='center', va='center')
+    
+    y_off += task_dim
+
+    edge_height = edge_height_scale*task_dim
+
     for (task_id, proc_id) in ag.edges:
         if task_id in invisible_tasks and proc_id in invisible_procs:
             continue
         x1 = task_id*width/ag.n + 0.5*width/ag.n
-        y1 = 0.1 + object_height
+        y1 = y_off
         x0 = proc_id*width/ag.m + 0.5*width/ag.m
-        y0 = 0.1 + 2*object_height
+        y0 = y_off + edge_height
         xmid = 0.5*(x0 + x1)
         ymid = 0.5*(y0 + y1)
         if task_id in invisible_tasks:
@@ -597,7 +845,7 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
             out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], beg_arrow=True))
         if (task_id, proc_id) in ag.np_assignments:
             #ax.plot([x0,x1],[y0,y1], color='k', linewidth=5.0, linestyle='dashed')
-            out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], linestyle='dashed', linewidth=5.0))
+            out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], linestyle='dashed', linewidth=assign_width))
         if (task_id, proc_id) in ag.highlights:
             out.draw_center(CircGraphic(0.25, facecolor='black'), 0.5*(x0 + x1), 0.5*(y0 + y1))
     #There's one instance where we need to have an assignment despite no affinity in the dissertation, so we need to pull this one out of the above for loop
@@ -606,10 +854,12 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
             continue
         #ax.plot([x0,x1],[y0,y1], color='k', linewidth=5.0, alpha=0.3)
         x1 = task_id*width/ag.n + 0.5*width/ag.n
-        y1 = 0.1 + object_height
+        y1 = y_off
         x0 = proc_id*width/ag.m + 0.5*width/ag.m
-        y0 = 0.1 + 2*object_height
-        out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], alpha=0.3, linewidth=5.0))
+        y0 = y_off + edge_height
+        out.draw_left_bottom(PathGraphic([(x0, y0), (x1, y1)], alpha=0.3, linewidth=assign_width))
+    
+    y_off += edge_height
 
     j2 = -1
     for j in range(ag.m):
@@ -623,7 +873,7 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
             proc_txt_str = proc_label_txts[j]
         cpug = cpu(j2, start_from_zero=start_from_zero, pi_text=pi_text, txt_str=proc_txt_str, indirect_indices=indirect_indices, indirect_size=indirect_size, min_radius=this_radius)
         
-        center:Tuple[float,float] = (j*width/ag.m + 0.5*width/ag.m, 0.1 + object_height*2.5 - (object_height/2 - object_height/2 * np.sqrt(ag.speeds[j])))
+        center:Tuple[float,float] = (j*width/ag.m + 0.5*width/ag.m, y_off + cpug.height/2)
         out.draw_center(cpug, center[0], center[1])
         #draw_circ(ax, center, this_radius, j)
         #ax.add_patch(Circle(center, 0.6*this_radius, facecolor='white'))
@@ -632,33 +882,11 @@ def draw_ag(ag: AffinityGraph, filename:str = None, start_from_zero:bool=False,
         #    proc_txt = '$\\pi_' + str(j if start_from_zero else j + 1) + '$'
         #ax.text(center[0], center[1], proc_txt, ha = 'center', va = 'center')
         if draw_idle:
-            out.draw_left_bottom(PathGraphic([(center[0], 0.1 + 2*object_height + cpug.height), (center[0], 0.1 + 4*object_height)]))
+            out.draw_left_bottom(PathGraphic([(center[0], y_off + cpug.height), (center[0], y_off + object_height + edge_height)]))
             if all([proc_id != j for _, proc_id in ag.assignments]):
-                out.draw_left_bottom(PathGraphic([(center[0], 0.1 + 2*object_height + cpug.height), (center[0], 0.1 + 4*object_height)], alpha=0.3, linewidth=5.0))
-            out.draw_center(RectGraphic(object_height, object_height), center[0], 0.1 + 4.5*object_height)
-            out.draw_center(task_labels[ag.n + j], center[0], 0.1 + 4.5*object_height)
-
-    i2 = -1
-    for i in range(ag.n):
-        if i in invisible_tasks:
-            continue
-
-        i2 += 1
-        #center of box is at i*width/ag.n + 0.5*width/ag.n
-        #left of box is then that minus object_height/2, right is plus object_height/2
-        center:Tuple[float,float] = (i*width/ag.n + 0.5*width/ag.n, 0.1 + object_height/2)
-        cx:float = center[0]
-        cy:float = center[1]
-        rectg = RectGraphic(object_height, object_height)
-        out.draw_center(rectg, cx, cy)
-        out.draw_center(task_labels[i2], cx, cy)
-        #ax.fill([cx - object_height/2, cx + object_height/2, cx + object_height/2, cx - object_height/2],\
-        #        [cy - object_height/2, cy - object_height/2, cy + object_height/2, cy + object_height/2],\
-        #            facecolor='white', edgecolor='k')
-        #task_txt = r'Task~' + str(i if start_from_zero else i + 1)
-        #if pi_text:
-        #    task_txt = '$\\tau_' + str(i if start_from_zero else i + 1) + '$'
-        #ax.text(cx, cy, task_txt, ha='center', va='center')
+                out.draw_left_bottom(PathGraphic([(center[0], y_off + cpug.height), (center[0], y_off + object_height + edge_height)], alpha=0.3, linewidth=assign_width))
+            out.draw_center(RectGraphic(task_dim, task_dim), center[0], y_off + object_height + edge_height + task_dim/2)
+            out.draw_center(task_labels[ag.n + j], center[0], y_off + object_height + edge_height + task_dim/2)
 
     if filename is not None:
         #plt.savefig(filename, bbox_inches='tight')
@@ -684,17 +912,27 @@ class Drawable:
         assert(False)
 
 class TextGraphic(Drawable):
-    def __init__(self, text: str, color='k'):
+    def __init__(self, text: str, color:str='k', box:bool=False, estimate:bool=True, zorder=-1):
         scratch_fig: Figure = plt.figure()
         scratch_ax: Axes = scratch_fig.add_subplot()
-        scratch_txt: Text = scratch_ax.text(0, 0, text)
+        scratch_ax.set_xlim(0,6.4*100/SCALEDOWN_DISPLAY_DATA)
+        scratch_ax.set_ylim(0,4.8*100/SCALEDOWN_DISPLAY_DATA)
+        scratch_txt: Text = scratch_ax.text(0, 0, text, ha='left', va='bottom')
         scratch_fig.draw_without_rendering()
         bbox: Bbox = scratch_txt.get_window_extent()
 
-        TEXT_SCALE_MAGIC = 18
+        if estimate:
+            TEXT_SCALE_MAGIC = 18
+            super().__init__(bbox.bounds[2]/TEXT_SCALE_MAGIC, bbox.bounds[3]/TEXT_SCALE_MAGIC, facecolor=color, edgecolor=color, hatch=None, zorder=zorder)
+        else:
+            bbox = bbox.transformed(scratch_ax.transData.inverted())
+            super().__init__(bbox.x1 - bbox.x0, bbox.y1 - bbox.y0, facecolor=color, edgecolor=color, hatch=None, zorder=zorder)
 
-        super().__init__(bbox.bounds[2]/TEXT_SCALE_MAGIC, bbox.bounds[3]/TEXT_SCALE_MAGIC, facecolor=color, edgecolor=color, hatch=None)
+        #scratch_ax.fill([0, self.width, self.width, 0], [0, 0, self.height, self.height], alpha=1.0)
+        #plt.show()
+        
         self.text = text
+        self.draw_box = box
 
         #disp_width: float = bbox.bounds[2]/TEXT_SCALE_MAGIC
         #disp_height: float = bbox.bounds[3]/TEXT_SCALE_MAGIC
@@ -702,7 +940,9 @@ class TextGraphic(Drawable):
         plt.close(scratch_fig)
     
     def draw(self, ax: Axes, x:float, y:float) -> None:
-        ax.text(x, y, self.text, color=self.edgecolor)
+        ax.text(x, y, self.text, color=self.edgecolor, ha='left', va='bottom')
+        if self.draw_box:
+            ax.fill([x, x + self.width, x + self.width, x], [y, y, y + self.height, y + self.height], alpha=0.2)
 
 class RectGraphic(Drawable):
     def __init__(self, width: float, height:float, facecolor='white', edgecolor='k', hatch=None, zorder:int=-1):
@@ -1241,6 +1481,7 @@ def preview(drawable: Drawable, figsize:Tuple[float,float]=None) -> None:
         fig = plt.figure(figsize=figsize)
     else:
         fig = plt.figure(figsize=(drawable.width/SCALEDOWN_DISPLAY_DATA, drawable.height/SCALEDOWN_DISPLAY_DATA))
+        #fig = plt.figure(figsize=(drawable.width, drawable.height))
     ax = fig.add_subplot()
     ax.set_xlim([-0.1, drawable.width+0.1])
     ax.set_ylim([-0.1, drawable.height+0.1])
