@@ -1476,20 +1476,25 @@ class Struct(Field):
     def get_field(self, name: str) -> Field:
         return self.fields[name]
 
-def preview(drawable: Drawable, figsize:Tuple[float,float]=None) -> None:
-    if figsize is not None:
-        fig = plt.figure(figsize=figsize)
-    else:
-        fig = plt.figure(figsize=(drawable.width/SCALEDOWN_DISPLAY_DATA, drawable.height/SCALEDOWN_DISPLAY_DATA))
-        #fig = plt.figure(figsize=(drawable.width, drawable.height))
-    ax = fig.add_subplot()
+def preview(drawable: Drawable, figsize:Tuple[float,float]=None, show:bool=True, ax:Axes = None):
+    if ax is None:
+        if figsize is not None:
+            fig = plt.figure(figsize=figsize)
+        else:
+            fig = plt.figure(figsize=(drawable.width/SCALEDOWN_DISPLAY_DATA, drawable.height/SCALEDOWN_DISPLAY_DATA))
+            #fig = plt.figure(figsize=(drawable.width, drawable.height))
+        ax = fig.add_subplot()
+        
+    ax.clear()
     ax.set_xlim([-0.1, drawable.width+0.1])
     ax.set_ylim([-0.1, drawable.height+0.1])
     ax.axis('off')
+    
     drawable.draw(ax, 0, 0)
     for callback in draw_callbacks:
         callback()
-    plt.show()
+    if show:
+        plt.show()
 
 def publish(drawable: Drawable, filename: str, figsize:Tuple[float,float]=None) -> None:
     if figsize is not None:
