@@ -6,7 +6,7 @@ import matplotlib
 #matplotlib.use('pgf')
 #plt.rcParams['pgf.rcfonts'] = False
 #plt.rcParams['pgf.texsystem'] = 'pdflatex'
-matplotlib.use('QtAgg')
+#matplotlib.use('QtAgg')
 from matplotlib.axes import Axes
 from matplotlib.patches import Circle, FancyArrowPatch
 import matplotlib.pyplot as plt
@@ -482,6 +482,7 @@ def sched_drawable(schedule: SchedData,
                     time_tick_txt:List[str] = None,
                     scale_time:float=2.0,
                     cpugs: List[Drawable] = [],
+                    filename:str = None,
                     draw_until: float=-1) -> Drawable:
     
     out = CompositeGraphic()
@@ -671,6 +672,10 @@ def sched_drawable(schedule: SchedData,
         txtg = TextGraphic(annot)
         out.draw_center_bottom(txtg, scale_time_f(annot_x), y_off + annot_height)
     
+    if filename is not None:
+        #plt.savefig(filename, bbox_inches='tight')
+        publish(out, filename=filename)
+
     return out
 
 def arrow_helper(ax: plt.Axes, x:float, y:float, dx:float, dy:float, color:str=None, alpha:float = 1.0):
